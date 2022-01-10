@@ -12,11 +12,14 @@ use std::io::{self, BufRead};
 use std::path::Path;
 use structopt::StructOpt;
 
+// These type aliases help differentiate different kinds of ints.
 type CellIdx = usize;
 type GroupNum = usize;
 type GroupIdx = usize;
 type GroupCells = [CellIdx; 9];
 
+// Groups are collections of cells that must contain 1-9.
+// They are implemented such that the same code works for a Row, Col, or Box.
 trait Group {
     fn cell_at(g: GroupNum, idx: GroupIdx) -> CellIdx;
     fn group_idx(idx: CellIdx) -> GroupIdx;
@@ -71,6 +74,7 @@ impl Group for Col {
     }
 }
 
+// To encourage SIMD, box positions are precomputed.
 struct Box;
 const STARTS: [CellIdx; 9] = [0, 3, 6, 27, 30, 33, 54, 57, 60];
 const STEPS: [CellIdx; 9] = [0, 1, 2, 9, 10, 11, 18, 19, 20];
