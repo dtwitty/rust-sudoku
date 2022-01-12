@@ -176,6 +176,7 @@ impl<'a> MutGroupsForCandidate<'a> {
 }
 
 #[derive(Debug, Copy, Clone)]
+#[repr(C, align(64))]
 struct CandidateToGroups {
     candidates: [CandidateSet; 9 * 3 * 9],
 }
@@ -194,11 +195,14 @@ impl CandidateToGroups {
 }
 
 #[derive(Debug, Copy, Clone)]
+#[repr(C, align(64))]
 pub struct Board {
     candidates: [CandidateSet; 81],
+    padding_1: [u8; 30],
+    candidate_to_groups: CandidateToGroups,
+    padding_2: [u8; 22],
     values: [Value; 81],
     num_remaining_cells: usize,
-    candidate_to_groups: CandidateToGroups,
 }
 
 impl fmt::Display for Board {
@@ -232,7 +236,7 @@ impl fmt::Display for Board {
 }
 
 // This function finds the first CandidateSet with a single set bit.
-// It is the meat-and-potatoes of the solver and should be 
+// It is the meat-and-potatoes of the solver and should be
 // AS FAST AS POSSIBLE!!!
 fn single_candidate_position(data: &[CandidateSet]) -> Option<usize> {
     const N: usize = 128;
@@ -246,7 +250,7 @@ fn single_candidate_position(data: &[CandidateSet]) -> Option<usize> {
             .zip(s.iter())
             // Calculate whether this position has a single bit.
             .for_each(|(a, &c)| *a = (((c != 0) & ((c & (c - 1)) == 0)) as u8) * 0xFF);
-        
+
         // Now that we have an array of "has_single_bit" flags, we need to find the first (if any).
         // The idea is to avoid branching at all costs! We populate a u128 where each bit position
         // encodes 'has_single_bit' in the input array.
@@ -287,18 +291,21 @@ impl Board {
         Board {
             // Which values are candidates for this cell?
             candidates: [ALL_CANDS; 81],
-            
+
             // What is the solved value at this cell?
             values: [NO_VALUE; 81],
-            
+
             // How many cells are left to solve?
             num_remaining_cells: 81,
-            
+
             // Where is each value available in each group?
             // For example, we can ask 'In Row 2, which cells can take a 5?'
             candidate_to_groups: CandidateToGroups {
                 candidates: [ALL_CANDS; 9 * 3 * 9],
             },
+
+            padding_1: [0; 30],
+            padding_2: [0; 22],
         }
     }
 
@@ -324,7 +331,7 @@ impl Board {
         }
         &mut self.candidates[idx]
     }
-    
+
     // Get candidates at a cell, assuming a valid index.
     fn unsafe_candidates_at(&self, idx: CellIdx) -> &CandidateSet {
         unsafe {
@@ -340,7 +347,7 @@ impl Board {
         unsafe {
             core::intrinsics::assume(idx < 81);
         }
-        
+
         // Basic bookkeeping.
         self.values[idx] = v;
         self.candidates[idx] = 0;
@@ -371,7 +378,7 @@ impl Board {
                 // To say that this cell is no longer available.
                 .remove_candidate(Row::group_idx(idx) as Value);
         }
-        
+
         // For each candidate..
         for i in 0..9 {
             self.candidate_to_groups
@@ -381,7 +388,7 @@ impl Board {
                 // To say that this cell is no longer available.
                 .remove_candidate(Col::group_idx(idx) as Value);
         }
-        
+
         // For each candidate...
         for i in 0..9 {
             self.candidate_to_groups
@@ -397,13 +404,13 @@ impl Board {
             .candidate_to_groups
             .mut_groups_for_candidate(v)
             .mut_row_candidates(r) = 0;
-        
+
         // This value is no longer available anywhere in the current col.
         *self
             .candidate_to_groups
             .mut_groups_for_candidate(v)
             .mut_col_candidates(c) = 0;
-        
+
         // This value is no longer available anywhere in the current box.
         *self
             .candidate_to_groups
@@ -516,7 +523,7 @@ impl Board {
                 let n = cbs(c as u16) as u8;
                 *a = is_zero << 7 | n << 2 | m;
             });
-        
+
         // Select the cell_id with candidates the lowest number of candidates,
         // following constraints above.
         (arr.iter()
@@ -560,7 +567,7 @@ impl Board {
     #[inline(never)]
     fn has_conflict(&self) -> bool {
         const N: usize = 64;
-        
+
         // The idea is to process big chunks of the values and candidates array looking for conflicts.
         return self
             .candidates
@@ -603,7 +610,7 @@ impl Board {
         // The candidate_to_groups_mapping tells where each value is viable in each group.
         // If there are any single-bit values in that array, that is a hidden single!
         let o = single_candidate_position(&self.candidate_to_groups.candidates);
-        
+
         if let Some(i) = o {
             // We found a hidden single! We just need to extract its position information so
             // we can set the value at the right cell.
@@ -626,7 +633,7 @@ impl Board {
             self.set_value_at(idx, v as Value);
             return true;
         }
-        
+
         // No hidden singles found :(
         false
     }
@@ -637,15 +644,15 @@ pub fn solve(board: &mut Board) -> Option<Board> {
     match res {
         // If the board is solved, return it!
         ConstraintPropagationResult::Solved => Some(*board),
-        
+
         // If we found a conflict, we reject this board.
         ConstraintPropagationResult::FoundConflict => None,
-        
+
         // We don't know if this board is on the right path, so we have to backtrack.
         _ => {
             // Pick the most constrained cell.
             let idx = board.most_constrained_cell();
-            
+
             // Check every possible candidate for that cell.
             for v in 0..9 {
                 if board.unsafe_candidates_at(idx).has_candidate(v) {
@@ -660,7 +667,7 @@ pub fn solve(board: &mut Board) -> Option<Board> {
                     }
                 }
             }
-            
+
             // We have checked every candidate for a given cell and found no suitable value.
             // This board must be unsolveable.
             None
