@@ -2,8 +2,10 @@
 #![feature(const_assume)]
 #![feature(stdsimd)]
 
+
 extern crate aligned;
 extern crate structopt;
+extern crate argmm;
 use aligned::{Aligned, A32};
 use core::arch::x86_64::*;
 use std::fmt;
@@ -11,6 +13,7 @@ use std::fs::File;
 use std::io::{self, BufRead};
 use std::path::Path;
 use structopt::StructOpt;
+use argmm::ArgMinMax;
 
 // These type aliases help differentiate different kinds of ints.
 type CellIdx = usize;
@@ -112,8 +115,8 @@ fn all_neighbors(idx: CellIdx) -> [CellIdx; 27] {
     arr
 }
 
-pub type Value = u16;
-const NO_VALUE: Value = 10;
+pub type Value = u8;
+const NO_VALUE: Value = 255;
 
 pub trait ValueMethods {
     fn is_set(&self) -> bool;
@@ -200,7 +203,6 @@ pub struct Board {
     candidates: [CandidateSet; 81],
     padding_1: [u8; 30],
     candidate_to_groups: CandidateToGroups,
-    padding_2: [u8; 22],
     values: [Value; 81],
     num_remaining_cells: usize,
 }
@@ -305,7 +307,7 @@ impl Board {
             },
 
             padding_1: [0; 30],
-            padding_2: [0; 22],
+            //padding_2: [0; 22],
         }
     }
 
@@ -526,12 +528,7 @@ impl Board {
 
         // Select the cell_id with candidates the lowest number of candidates,
         // following constraints above.
-        (arr.iter()
-            .enumerate()
-            .map(|(i, &a)| (i as u8, a))
-            .reduce(|(i, a), (j, b)| if b <= a { (j, b) } else { (i, a) })
-            .unwrap()
-            .0) as usize
+        arr.argmin().unwrap()
     }
 
     // This function repeatedly propagates constraints until it can no longer make any
