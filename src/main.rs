@@ -2,18 +2,17 @@
 #![feature(const_assume)]
 #![feature(stdsimd)]
 
-
 extern crate aligned;
-extern crate structopt;
 extern crate argmm;
-use aligned::{Aligned, A32};
+extern crate structopt;
+use aligned::{Aligned, A64};
+use argmm::ArgMinMax;
 use core::arch::x86_64::*;
 use std::fmt;
 use std::fs::File;
 use std::io::{self, BufRead};
 use std::path::Path;
 use structopt::StructOpt;
-use argmm::ArgMinMax;
 
 // These type aliases help differentiate different kinds of ints.
 type CellIdx = usize;
@@ -29,6 +28,9 @@ trait Group {
     fn for_cell(idx: CellIdx) -> GroupNum;
 
     fn cells(g: GroupNum) -> GroupCells {
+        unsafe {
+            core::intrinsics::assume(g < 9);
+        }
         [
             Self::cell_at(g, 0),
             Self::cell_at(g, 1),
@@ -43,6 +45,9 @@ trait Group {
     }
 
     fn neighbors(idx: CellIdx) -> GroupCells {
+        unsafe {
+            core::intrinsics::assume(idx < 81);
+        }
         Self::cells(Self::for_cell(idx))
     }
 }
@@ -50,14 +55,24 @@ trait Group {
 struct Row;
 impl Group for Row {
     fn cell_at(g: GroupNum, idx: GroupIdx) -> CellIdx {
+        unsafe {
+            core::intrinsics::assume(g < 9);
+            core::intrinsics::assume(idx < 9);
+        }
         9 * g + idx
     }
 
     fn group_idx(idx: CellIdx) -> GroupIdx {
+        unsafe {
+            core::intrinsics::assume(idx < 81);
+        }
         idx % 9
     }
 
     fn for_cell(idx: CellIdx) -> GroupNum {
+        unsafe {
+            core::intrinsics::assume(idx < 81);
+        }
         idx / 9
     }
 }
@@ -65,14 +80,24 @@ impl Group for Row {
 struct Col;
 impl Group for Col {
     fn cell_at(g: GroupNum, idx: GroupIdx) -> CellIdx {
+        unsafe {
+            core::intrinsics::assume(g < 9);
+            core::intrinsics::assume(idx < 9);
+        }
         idx * 9 + g
     }
 
     fn group_idx(idx: CellIdx) -> GroupIdx {
+        unsafe {
+            core::intrinsics::assume(idx < 81);
+        }
         idx / 9
     }
 
     fn for_cell(idx: CellIdx) -> GroupNum {
+        unsafe {
+            core::intrinsics::assume(idx < 81);
+        }
         idx % 9
     }
 }
@@ -93,21 +118,48 @@ impl Group for Box {
     }
 
     fn group_idx(idx: CellIdx) -> GroupIdx {
+        unsafe {
+            core::intrinsics::assume(idx < 81);
+        }
         let row = idx / 9;
         let col = idx % 9;
         (row % 3) * 3 + col % 3
     }
 
     fn for_cell(idx: CellIdx) -> GroupNum {
+        unsafe {
+            core::intrinsics::assume(idx < 81);
+        }
         let row = idx / 9;
         let col = idx % 9;
         let box_row = row / 3;
         let box_col = col / 3;
         box_row * 3 + box_col
     }
+
+    fn cells(g: GroupNum) -> GroupCells {
+        unsafe {
+            core::intrinsics::assume(g < 9);
+        }
+        let s = STARTS[g];
+        [
+            s + 0,
+            s + 1,
+            s + 2,
+            s + 9,
+            s + 10,
+            s + 11,
+            s + 18,
+            s + 19,
+            s + 20,
+        ]
+    }
 }
 
 fn all_neighbors(idx: CellIdx) -> [CellIdx; 27] {
+    unsafe {
+        core::intrinsics::assume(idx < 81);
+    }
     let mut arr: [CellIdx; 27] = [0; 27];
     arr[..9].clone_from_slice(&Row::neighbors(idx));
     arr[9..18].clone_from_slice(&Col::neighbors(idx));
@@ -145,6 +197,9 @@ impl CandidateSetMethods for CandidateSet {
         self.count_ones()
     }
     fn remove_candidate(&mut self, v: Value) {
+        unsafe {
+            core::intrinsics::assume(v < 9);
+        }
         *self &= !(1 << v);
     }
 }
@@ -244,9 +299,9 @@ fn single_candidate_position(data: &[CandidateSet]) -> Option<usize> {
     const N: usize = 128;
     // Chunk the input array so that many positions are considered at once.
     data.chunks(N).enumerate().find_map(|(chunk, s)| {
-        // Create a 32-byte aligned array of u8s where each position encodes 'Is Single Bit'.
+        // Create a 64-byte aligned array of u8s where each position encodes 'Is Single Bit'.
         // It is faster to compute "Is Single Bit" all at once, then find the first in a second pass.
-        let mut a: Aligned<A32, _> = Aligned([0u8; N]);
+        let mut a: Aligned<A64, _> = Aligned([0u8; N]);
         let arr = a.as_mut_slice();
         arr.iter_mut()
             .zip(s.iter())
@@ -371,119 +426,122 @@ impl Board {
             core::intrinsics::assume(b < 9);
         }
 
-        // For each candidate...
+        // No candidate is available...
         for i in 0..9 {
             self.candidate_to_groups
                 .mut_groups_for_candidate(i)
-                // Update the row of the cell...
+                // In this row...
                 .mut_row_candidates(r)
-                // To say that this cell is no longer available.
+                // At this position.
                 .remove_candidate(Row::group_idx(idx) as Value);
         }
 
-        // For each candidate..
+        // No candidate is available...
         for i in 0..9 {
             self.candidate_to_groups
                 .mut_groups_for_candidate(i)
-                // Update the col of the cell...
+                // In this column...
                 .mut_col_candidates(c)
-                // To say that this cell is no longer available.
+                // At this position.
                 .remove_candidate(Col::group_idx(idx) as Value);
         }
 
-        // For each candidate...
+        // No candidate is available...
         for i in 0..9 {
             self.candidate_to_groups
                 .mut_groups_for_candidate(i)
-                // Update the box of the cell...
+                // In this box...
                 .mut_box_candidates(b)
-                // To say that this cell is no longer available.
+                // At this position.
                 .remove_candidate(Box::group_idx(idx) as Value);
         }
 
-        // This value is no longer available anywhere in the current row.
         *self
             .candidate_to_groups
+            // This value...
             .mut_groups_for_candidate(v)
+            // Is no longer available in this row.
             .mut_row_candidates(r) = 0;
 
-        // This value is no longer available anywhere in the current col.
         *self
             .candidate_to_groups
+            // This value...
             .mut_groups_for_candidate(v)
+            // Is no longer available in this column.
             .mut_col_candidates(c) = 0;
 
-        // This value is no longer available anywhere in the current box.
         *self
             .candidate_to_groups
+            // This value...
             .mut_groups_for_candidate(v)
+            // Is no longer available in this box.
             .mut_box_candidates(b) = 0;
 
-        // For each row...
+        // In every row...
         for r in 0..9 {
             self.candidate_to_groups
-                // The current value...
+                // This value...
                 .mut_groups_for_candidate(v)
                 .mut_row_candidates(r)
-                // Is not available in the current column.
+                // Is no longer available in this column.
                 .remove_candidate(c as Value);
         }
 
-        // For each box...
+        // For each position in this box...
         for br in 0..3 {
             for bc in 0..3 {
                 let r = (b / 3) * 3 + br;
                 let c = (b % 3) * 3 + bc;
                 self.candidate_to_groups
-                    // The current value...
+                    // This value...
                     .mut_groups_for_candidate(v)
+                    // Isn't available in the position's row...
                     .mut_row_candidates(r)
-                    // Is not available in the current colum.
+                    // At the position's column.
                     .remove_candidate(c as Value);
             }
         }
 
-        // For each column...
+        // In every column...
         for c in 0..9 {
             self.candidate_to_groups
-                // The current value...
+                // This value...
                 .mut_groups_for_candidate(v)
                 .mut_col_candidates(c)
-                // Is not available in the current row.
+                // Is no longer available in this row.
                 .remove_candidate(r as Value);
         }
 
-        // For each box...
+        // For each position in this box...
         for bc in 0..3 {
             for br in 0..3 {
                 let r = (b / 3) * 3 + br;
                 let c = (b % 3) * 3 + bc;
                 self.candidate_to_groups
-                    // The current value
+                    // This value...
                     .mut_groups_for_candidate(v)
+                    // Isn't available in the position's column...
                     .mut_col_candidates(c)
-                    // Is not available in the current row.
+                    // At the position's row.
                     .remove_candidate(r as Value);
             }
         }
 
-        // For each column...
+        // The candidate isn't available at position in boxes that
+        // overlap the current row.
         for c in 0..9 {
             self.candidate_to_groups
-                // The current value...
                 .mut_groups_for_candidate(v)
                 .mut_box_candidates((r / 3) * 3 + (c / 3))
-                // Is not available in the current box.
                 .remove_candidate(((r % 3) * 3 + (c % 3)) as Value);
         }
 
-        // For each row...
+        // The candidate isn't available at position in boxes that
+        // overlap the current column.
         for r in 0..9 {
             self.candidate_to_groups
-                // The current value...
                 .mut_groups_for_candidate(v)
                 .mut_box_candidates((r / 3) * 3 + (c / 3))
-                // Is not available in the current box.
                 .remove_candidate(((r % 3) * 3 + (c % 3)) as Value);
         }
     }
@@ -515,12 +573,12 @@ impl Board {
         // <cell_id % 3> is a poor-man's randomization. Without it, the solver will prefer cells
         // near the end of the array, leading to bunched backtracking that clears fewer candidates.
         // With it, earlier cells may trump later ones, leading to more even candidate clearing.
-        let mut arr = [0u8; 81];
+        let mut a: Aligned<A64, _> = Aligned([0u8; 81]);
+        let arr = a.as_mut_slice();
         arr.iter_mut()
             .zip(self.candidates.iter())
             .zip(MODS.iter())
-            .enumerate()
-            .for_each(|(_i, ((a, &c), &m))| {
+            .for_each(|((a, &c), &m)| {
                 let is_zero = (c == 0) as u8;
                 let n = cbs(c as u16) as u8;
                 *a = is_zero << 7 | n << 2 | m;
