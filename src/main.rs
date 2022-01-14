@@ -621,23 +621,12 @@ impl Board {
     // remaining candidate values.
     #[inline(never)]
     fn has_conflict(&self) -> bool {
-        const N: usize = 64;
-
-        // The idea is to process big chunks of the values and candidates array looking for conflicts.
-        return self
-            .candidates
-            // We use chunking to give the compiler convenient array boundaries to add branch points.
-            // This encourages the compiler to do each chunk in SIMD, then do a single branch for each chunk.
-            .chunks(N)
-            .zip(self.values.chunks(N))
-            .any(|(c_chunk, v_chunk)| {
-                c_chunk
-                    .iter()
-                    .zip(v_chunk.iter())
-                    .map(|(&cands, &v)| (!v.is_set() & (cands == 0)) as u8)
-                    .sum::<u8>()
-                    != 0
-            });
+        self.candidates
+            .iter()
+            .zip(self.values.iter())
+            .map(|(&cands, &v)| (!v.is_set() & (cands == 0)) as u8)
+            .sum::<u8>()
+            != 0
     }
 
     // This function finds and sets a 'naked single' if one exists.
