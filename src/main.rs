@@ -182,11 +182,13 @@ impl ValueMethods for Value {
 
 pub type CandidateSet = u16;
 const ALL_CANDS: CandidateSet = 511;
+const SET_CANDS: CandidateSet = 0x600;
 
 pub trait CandidateSetMethods {
     fn has_candidate(&self, v: Value) -> bool;
     fn num_candidates(&self) -> u32;
     fn remove_candidate(&mut self, v: Value);
+    fn is_set(&self) -> bool;
 }
 
 impl CandidateSetMethods for CandidateSet {
@@ -201,6 +203,9 @@ impl CandidateSetMethods for CandidateSet {
             core::intrinsics::assume(v < 9);
         }
         *self &= !(1 << v);
+    }
+    fn is_set(&self) -> bool {
+        *self == SET_CANDS
     }
 }
 
@@ -256,7 +261,6 @@ impl CandidateToGroups {
 #[repr(C, align(64))]
 pub struct Board {
     candidates: [CandidateSet; 81],
-    padding_1: [u8; 30],
     candidate_to_groups: CandidateToGroups,
     values: [Value; 81],
     num_remaining_cells: usize,
@@ -306,7 +310,8 @@ fn single_candidate_position(data: &[CandidateSet]) -> Option<usize> {
         arr.iter_mut()
             .zip(s.iter())
             // Calculate whether this position has a single bit.
-            .for_each(|(a, &c)| *a = (((c != 0) & ((c & (c - 1)) == 0)) as u8) * 0xFF);
+            // We can ignore the case where c == 0 because that would imply a conflict.
+            .for_each(|(a, &c)| *a = (((c & (c - 1)) == 0) as u8) * 0xFF);
 
         // Now that we have an array of "has_single_bit" flags, we need to find the first (if any).
         // The idea is to avoid branching at all costs! We populate a u128 where each bit position
@@ -360,9 +365,6 @@ impl Board {
             candidate_to_groups: CandidateToGroups {
                 candidates: [ALL_CANDS; 9 * 3 * 9],
             },
-
-            padding_1: [0; 30],
-            //padding_2: [0; 22],
         }
     }
 
@@ -407,7 +409,7 @@ impl Board {
 
         // Basic bookkeeping.
         self.values[idx] = v;
-        self.candidates[idx] = 0;
+        self.candidates[idx] = SET_CANDS;
         self.num_remaining_cells -= 1;
 
         // Erase this value from the cell's neighbors.
@@ -461,21 +463,21 @@ impl Board {
             // This value...
             .mut_groups_for_candidate(v)
             // Is no longer available in this row.
-            .mut_row_candidates(r) = 0;
+            .mut_row_candidates(r) = SET_CANDS;
 
         *self
             .candidate_to_groups
             // This value...
             .mut_groups_for_candidate(v)
             // Is no longer available in this column.
-            .mut_col_candidates(c) = 0;
+            .mut_col_candidates(c) = SET_CANDS;
 
         *self
             .candidate_to_groups
             // This value...
             .mut_groups_for_candidate(v)
             // Is no longer available in this box.
-            .mut_box_candidates(b) = 0;
+            .mut_box_candidates(b) = SET_CANDS;
 
         // In every row...
         for r in 0..9 {
@@ -579,9 +581,9 @@ impl Board {
             .zip(self.candidates.iter())
             .zip(MODS.iter())
             .for_each(|((a, &c), &m)| {
-                let is_zero = (c == 0) as u8;
+                let is_set = c.is_set() as u8;
                 let n = cbs(c as u16) as u8;
-                *a = is_zero << 7 | n << 2 | m;
+                *a = is_set << 7 | n << 2 | m;
             });
 
         // Select the cell_id with candidates the lowest number of candidates,
@@ -621,12 +623,24 @@ impl Board {
     // remaining candidate values.
     #[inline(never)]
     fn has_conflict(&self) -> bool {
-        self.candidates
+        let has_cand_conflict = self
+            .candidates
             .iter()
-            .zip(self.values.iter())
-            .map(|(&cands, &v)| (!v.is_set() & (cands == 0)) as u8)
+            .map(|&cands| (cands == 0) as u8)
             .sum::<u8>()
-            != 0
+            != 0;
+
+        if has_cand_conflict {
+            return true;
+        }
+
+        let has_group_conflict = self
+            .candidate_to_groups
+            .candidates
+            .chunks(128)
+            .any(|c_chunk| c_chunk.iter().map(|&cands| (cands == 0) as u8).sum::<u8>() != 0);
+
+        has_group_conflict
     }
 
     // This function finds and sets a 'naked single' if one exists.
