@@ -618,29 +618,20 @@ impl Board {
         ConstraintPropagationResult::NoConstraintsPropagated
     }
 
-    // This function detects whether the board has any cells that can't be satisfied.
-    // This means there is some cell that doesn't have a set value and has no
-    // remaining candidate values.
+    // This function detects whether the board has any conflicts that prove it is unsolveable.
     #[inline(never)]
     fn has_conflict(&self) -> bool {
-        let has_cand_conflict = self
-            .candidates
-            .iter()
-            .map(|&cands| (cands == 0) as u8)
-            .sum::<u8>()
-            != 0;
+        const N: usize = 128;
 
-        if has_cand_conflict {
-            return true;
-        }
+        let cand_chunks = self.candidates.chunks(N);
+        let group_chunks = self.candidate_to_groups.candidates.chunks(N);
 
-        let has_group_conflict = self
-            .candidate_to_groups
-            .candidates
-            .chunks(128)
-            .any(|c_chunk| c_chunk.iter().map(|&cands| (cands == 0) as u8).sum::<u8>() != 0);
-
-        has_group_conflict
+        // Check cells...
+        cand_chunks
+            // And then (value, group) pairs..
+            .chain(group_chunks)
+            // To see if any have no candidates.
+            .any(|c_chunk| c_chunk.iter().map(|&cands| (cands == 0) as u8).sum::<u8>() != 0)
     }
 
     // This function finds and sets a 'naked single' if one exists.
