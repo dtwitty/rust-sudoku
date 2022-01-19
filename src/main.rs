@@ -297,41 +297,30 @@ impl fmt::Display for Board {
 }
 
 // This function finds the first CandidateSet with a single set bit.
-// It is the meat-and-potatoes of the solver and should be
+// This is the heart of constraint propagation, so it should be
 // AS FAST AS POSSIBLE!!!
 fn single_candidate_position(data: &[CandidateSet]) -> Option<usize> {
-    const N: usize = 128;
     // Chunk the input array so that many positions are considered at once.
-    data.chunks(N).enumerate().find_map(|(chunk, s)| {
-        // Create a 64-byte aligned array of u8s where each position encodes 'Is Single Bit'.
-        // It is faster to compute "Is Single Bit" all at once, then find the first in a second pass.
-        let mut a: Aligned<A64, _> = Aligned([0u8; N]);
-        let arr = a.as_mut_slice();
-        arr.iter_mut()
-            .zip(s.iter())
-            // Calculate whether this position has a single bit.
-            // We can ignore the case where c == 0 because that would imply a conflict.
-            .for_each(|(a, &c)| *a = (((c & (c - 1)) == 0) as u8) * 0xFF);
-
-        // Now that we have an array of "has_single_bit" flags, we need to find the first (if any).
-        // The idea is to avoid branching at all costs! We populate a u128 where each bit position
-        // encodes 'has_single_bit' in the input array.
+    data.chunks(32).enumerate().find_map(|(chunk, s)| {
         unsafe {
+            let mut a: Aligned<A64, _> = Aligned([0u8; 32]);
+            let arr = a.as_mut_slice();
+            arr.iter_mut()
+                .zip(s.iter())
+                // Calculate whether this position has a single bit.
+                // We can ignore the case where c == 0 because that would imply a conflict.
+                .for_each(|(a, &c)| *a = (((c & (c - 1)) == 0) as u8) * 0xFF);
             let ptr = arr.as_ptr();
 
-            let mut bitmask: u128 = 0;
-            for i in 0..N / 32 {
-                // Load 32 bytes of 0 or 0xFF.
-                let packed_bits = _mm256_load_si256(ptr.offset(i as isize * 32) as *const __m256i);
-                // Pack the first bit of each into a u32, then add that to a u128.
-                let bits = _mm256_movemask_epi8(packed_bits) as u128;
-                bitmask |= bits << (i * 32);
-            }
+            // Load 32 bytes of 0 or 0xFF.
+            let packed_bits = _mm256_load_si256(ptr as *const __m256i);
+            // Pack the first bit of each into a u32.
+            let bitmask = _mm256_movemask_epi8(packed_bits) as u32;
 
             // This is the only branch needed to check a whole chunk of positions.
             // We simply check if our special bit array is non-zero, and find the first bit set.
             if bitmask != 0 {
-                Some(chunk * N + (bitmask.trailing_zeros() as usize))
+                Some(chunk * 32 + (bitmask.trailing_zeros() as usize))
             } else {
                 None
             }
