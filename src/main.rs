@@ -266,36 +266,6 @@ pub struct Board {
     num_remaining_cells: usize,
 }
 
-impl fmt::Display for Board {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        const LANE_SEP: &str = "------+-------+------";
-        const CELL_SEP: &str = " ";
-        const BLOCK_SEP: &str = " | ";
-
-        for r in 0..9 {
-            for c in 0..9 {
-                let sep = if c == 2 || c == 5 {
-                    BLOCK_SEP
-                } else {
-                    CELL_SEP
-                };
-                let v = self.values[r * 9 + c];
-                if v.is_set() {
-                    write!(f, "{}", v + 1).unwrap();
-                } else {
-                    write!(f, ".").unwrap();
-                }
-                write!(f, "{}", sep).unwrap();
-            }
-            writeln!(f).unwrap();
-            if r == 2 || r == 5 {
-                writeln!(f, "{}", LANE_SEP).unwrap();
-            }
-        }
-        Ok(())
-    }
-}
-
 // This function finds the first CandidateSet with a single set bit.
 // This is the heart of constraint propagation, so it should be
 // AS FAST AS POSSIBLE!!!
@@ -710,6 +680,36 @@ pub fn solve(board: &mut Board) -> Option<Board> {
             // This board must be unsolveable.
             None
         }
+    }
+}
+
+impl fmt::Display for Board {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        const LANE_SEP: &str = "------+-------+------";
+        const CELL_SEP: &str = " ";
+        const BLOCK_SEP: &str = " | ";
+
+        for r in 0..9 {
+            for c in 0..9 {
+                let sep = if c == 2 || c == 5 {
+                    BLOCK_SEP
+                } else {
+                    CELL_SEP
+                };
+                let v = self.values[r * 9 + c];
+                if v.is_set() {
+                    write!(f, "{}", v + 1).unwrap();
+                } else {
+                    write!(f, ".").unwrap();
+                }
+                write!(f, "{}", sep).unwrap();
+            }
+            writeln!(f).unwrap();
+            if r == 2 || r == 5 {
+                writeln!(f, "{}", LANE_SEP).unwrap();
+            }
+        }
+        Ok(())
     }
 }
 
