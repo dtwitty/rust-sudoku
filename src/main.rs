@@ -610,7 +610,7 @@ impl Board {
     // This function detects whether the board has any conflicts that prove it is unsolveable.
     #[inline(never)]
     fn has_conflict(&self) -> bool {
-        const N: usize = 128;
+        const N: usize = 32;
 
         let cand_chunks = self.candidates.chunks(N);
         let group_chunks = self.candidate_to_groups.candidates.chunks(N);
@@ -620,7 +620,7 @@ impl Board {
             // And then (value, group) pairs..
             .chain(group_chunks)
             // To see if any have no candidates.
-            .any(|c_chunk| c_chunk.iter().map(|&cands| (cands == 0) as u8).sum::<u8>() != 0)
+            .any(|c_chunk| c_chunk.iter().fold(false, |acc, &cands| acc | (cands == 0)))
     }
 
     // This function finds and sets a 'naked single' if one exists.
