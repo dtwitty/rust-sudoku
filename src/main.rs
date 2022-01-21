@@ -510,22 +510,6 @@ impl Board {
     // This is useful because this is the easiest cell to exhaustively check with backtracking.
     #[inline(never)]
     fn most_constrained_cell(&self) -> CellIdx {
-        // An array of [i % 3 for i in range(81)]
-        // This is needed because integer modulus is not provided by SIMD instructions.
-        const MODS: [u16; 81] = [
-            0, 1, 2, 0, 1, 2, 0, 1, 2, 0, 1, 2, 0, 1, 2, 0, 1, 2, 0, 1, 2, 0, 1, 2, 0, 1, 2, 0, 1,
-            2, 0, 1, 2, 0, 1, 2, 0, 1, 2, 0, 1, 2, 0, 1, 2, 0, 1, 2, 0, 1, 2, 0, 1, 2, 0, 1, 2, 0,
-            1, 2, 0, 1, 2, 0, 1, 2, 0, 1, 2, 0, 1, 2, 0, 1, 2, 0, 1, 2, 0, 1, 2,
-        ];
-
-        // Counts bits set in a u16.
-        // This is needed because popcnt is not a vectorized instruction.
-        fn cbs(mut v: u16) -> u16 {
-            v = v - ((v >> 1) & 0x5555);
-            v = (v & 0x3333) + ((v >> 2) & 0x3333);
-            ((v + (v >> 4) & 0xF0F) * 0x101) >> 8
-        }
-
         const N: usize = 16;
         const ARRAY_SIZE: usize = ((81 + N - 1) / N) * N;
 
@@ -540,11 +524,13 @@ impl Board {
         let mut arr = [0xFFFFu16; ARRAY_SIZE];
         arr.iter_mut()
             .zip(self.candidates.iter())
-            .zip(MODS.iter())
             .enumerate()
-            .for_each(|(i, ((a, &c), &m))| {
+            .for_each(|(i, (a, &c))| {
                 let is_set = c.is_set() as u16;
-                let n = cbs(c as u16);
+                let n = c.count_ones() as u16;
+                // This hack generates i % 3 using magic numbers.
+                // We have to do this because SIMD doesn't support integer division.
+                let m = ((i as u16) - (((i as u16) * 171) >> 9) * 3) as u16;
                 *a = is_set << 15 | n << 10 | m << 8 | (i as u16);
             });
 
