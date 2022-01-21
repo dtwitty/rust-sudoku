@@ -512,7 +512,7 @@ impl Board {
     fn most_constrained_cell(&self) -> CellIdx {
         // An array of [i % 3 for i in range(81)]
         // This is needed because integer modulus is not provided by SIMD instructions.
-        const MODS: [u8; 81] = [
+        const MODS: [u16; 81] = [
             0, 1, 2, 0, 1, 2, 0, 1, 2, 0, 1, 2, 0, 1, 2, 0, 1, 2, 0, 1, 2, 0, 1, 2, 0, 1, 2, 0, 1,
             2, 0, 1, 2, 0, 1, 2, 0, 1, 2, 0, 1, 2, 0, 1, 2, 0, 1, 2, 0, 1, 2, 0, 1, 2, 0, 1, 2, 0,
             1, 2, 0, 1, 2, 0, 1, 2, 0, 1, 2, 0, 1, 2, 0, 1, 2, 0, 1, 2, 0, 1, 2,
@@ -533,62 +533,48 @@ impl Board {
         // <has_zero_candidates> (1 bit) - to toss out finsihed cells
         // <num_candidates> (4 bits, with one extra) - to prefer cells with fewer candidates
         // <cell_id % 3> (2 bits)
-        // <cell_id % 3> is a poor-man's randomization. Without it, the solver will prefer cells
-        // near the end of the array, leading to bunched backtracking that clears fewer candidates.
-        // With it, earlier cells may trump later ones, leading to more even candidate clearing.
-        let mut arr = [0xFFu8; ARRAY_SIZE];
+        //   <cell_id % 3> is a poor-man's randomization. Without it, the solver will prefer cells
+        //   near the end of the array, leading to bunched backtracking that clears fewer candidates.
+        //   With it, earlier cells may trump later ones, leading to more even candidate clearing.
+        // <idx> - for the argmin
+        let mut arr = [0xFFFFu16; ARRAY_SIZE];
         arr.iter_mut()
             .zip(self.candidates.iter())
             .zip(MODS.iter())
-            .for_each(|((a, &c), &m)| {
-                let is_set = c.is_set() as u8;
-                let n = cbs(c as u16) as u8;
-                *a = is_set << 7 | n << 2 | m;
+            .enumerate()
+            .for_each(|(i, ((a, &c), &m))| {
+                let is_set = c.is_set() as u16;
+                let n = cbs(c as u16);
+                *a = is_set << 15 | n << 10 | m << 8 | (i as u16);
             });
 
-        // Select the cell_id with candidates the lowest number of candidates,
-        // following constraints above.
-        let mut idxs = [0xFFu8; ARRAY_SIZE];
-        idxs.iter_mut().enumerate().for_each(|(i, e)| {
-            *e = i as u8;
-        });
-
         unsafe {
-            let (best_vals, best_idxs) = arr
-                .as_chunks_unchecked::<N>()
-                .iter()
-                .zip(idxs.as_chunks_unchecked::<N>().iter())
-                .fold(
-                    ([0xFFu8; N], [0u8; N]),
-                    |(best_vals, best_idxs), (vals, idxs)| {
-                        let mut out_vals = [0xFFu8; N];
-                        let mut out_idxs = [0xFFu8; N];
+            let best_vals =
+                arr.as_chunks_unchecked::<N>()
+                    .iter()
+                    .fold([0xFFFFu16; N], |best_vals, vals| {
+                        let mut out_vals = [0xFFFFu16; N];
 
-                        let o = out_vals.iter_mut().zip(out_idxs.iter_mut());
-                        let a = best_vals.iter().zip(best_idxs.iter());
-                        let b = vals.iter().zip(idxs.iter());
-                        o.zip(a.zip(b)).for_each(
-                            |((out_val, out_idx), ((&best_val, &best_idx), (&val, &idx)))| {
-                                let c = val < best_val;
-                                *out_val = val * (c as u8) + best_val * ((!c) as u8);
-                                *out_idx = idx * (c as u8) + best_idx * ((!c) as u8);
-                            },
-                        );
-                        (out_vals, out_idxs)
-                    },
-                );
+                        let o = out_vals.iter_mut();
+                        let a = best_vals.iter();
+                        let b = vals.iter();
+                        o.zip(a.zip(b)).for_each(|(out_val, (&best_val, &val))| {
+                            let c = val < best_val;
+                            *out_val = val * (c as u16) + best_val * ((!c) as u16);
+                        });
+                        out_vals
+                    });
 
-            best_vals
-                .iter()
-                .zip(best_idxs.iter())
-                .fold((0xFFu8, 0xFFu8), |(best_val, best_idx), (&val, &idx)| {
+            (best_vals.iter().fold(
+                0xFFFFu16,
+                |best_val, &val| {
                     if val < best_val {
-                        (val, idx)
+                        val
                     } else {
-                        (best_val, best_idx)
+                        best_val
                     }
-                })
-                .1
+                },
+            ) & 0xFF)
                 .into()
         }
         /*
