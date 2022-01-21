@@ -577,19 +577,6 @@ impl Board {
             ) & 0xFF)
                 .into()
         }
-        /*
-        arr.iter()
-            .zip(idxs.iter())
-            .fold((0xFFu8, 0xFFu8), |(best_val, best_idx), (&val, &idx)| {
-                if val < best_val {
-                    (val, idx)
-                } else {
-                    (best_val, best_idx)
-                }
-            })
-            .1
-            .into()
-            */
     }
 
     // This function repeatedly propagates constraints until it can no longer make any
