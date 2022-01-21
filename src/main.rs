@@ -1,12 +1,11 @@
 #![feature(core_intrinsics)]
 #![feature(const_assume)]
 #![feature(stdsimd)]
+#![feature(slice_as_chunks)]
 
 extern crate aligned;
-extern crate argmm;
 extern crate structopt;
 use aligned::{Aligned, A64};
-use argmm::ArgMinMax;
 use core::arch::x86_64::*;
 use std::fmt;
 use std::fs::File;
@@ -527,6 +526,9 @@ impl Board {
             ((v + (v >> 4) & 0xF0F) * 0x101) >> 8
         }
 
+        const N: usize = 16;
+        const ARRAY_SIZE: usize = ((81 + N - 1) / N) * N;
+
         // This array holds values of the following format for each cell
         // <has_zero_candidates> (1 bit) - to toss out finsihed cells
         // <num_candidates> (4 bits, with one extra) - to prefer cells with fewer candidates
@@ -534,8 +536,7 @@ impl Board {
         // <cell_id % 3> is a poor-man's randomization. Without it, the solver will prefer cells
         // near the end of the array, leading to bunched backtracking that clears fewer candidates.
         // With it, earlier cells may trump later ones, leading to more even candidate clearing.
-        let mut a: Aligned<A64, _> = Aligned([0u8; 81]);
-        let arr = a.as_mut_slice();
+        let mut arr = [0xFFu8; ARRAY_SIZE];
         arr.iter_mut()
             .zip(self.candidates.iter())
             .zip(MODS.iter())
@@ -547,7 +548,62 @@ impl Board {
 
         // Select the cell_id with candidates the lowest number of candidates,
         // following constraints above.
-        arr.argmin().unwrap()
+        let mut idxs = [0xFFu8; ARRAY_SIZE];
+        idxs.iter_mut().enumerate().for_each(|(i, e)| {
+            *e = i as u8;
+        });
+
+        unsafe {
+            let (best_vals, best_idxs) = arr
+                .as_chunks_unchecked::<N>()
+                .iter()
+                .zip(idxs.as_chunks_unchecked::<N>().iter())
+                .fold(
+                    ([0xFFu8; N], [0u8; N]),
+                    |(best_vals, best_idxs), (vals, idxs)| {
+                        let mut out_vals = [0xFFu8; N];
+                        let mut out_idxs = [0xFFu8; N];
+
+                        let o = out_vals.iter_mut().zip(out_idxs.iter_mut());
+                        let a = best_vals.iter().zip(best_idxs.iter());
+                        let b = vals.iter().zip(idxs.iter());
+                        o.zip(a.zip(b)).for_each(
+                            |((out_val, out_idx), ((&best_val, &best_idx), (&val, &idx)))| {
+                                let c = val < best_val;
+                                *out_val = val * (c as u8) + best_val * ((!c) as u8);
+                                *out_idx = idx * (c as u8) + best_idx * ((!c) as u8);
+                            },
+                        );
+                        (out_vals, out_idxs)
+                    },
+                );
+
+            best_vals
+                .iter()
+                .zip(best_idxs.iter())
+                .fold((0xFFu8, 0xFFu8), |(best_val, best_idx), (&val, &idx)| {
+                    if val < best_val {
+                        (val, idx)
+                    } else {
+                        (best_val, best_idx)
+                    }
+                })
+                .1
+                .into()
+        }
+        /*
+        arr.iter()
+            .zip(idxs.iter())
+            .fold((0xFFu8, 0xFFu8), |(best_val, best_idx), (&val, &idx)| {
+                if val < best_val {
+                    (val, idx)
+                } else {
+                    (best_val, best_idx)
+                }
+            })
+            .1
+            .into()
+            */
     }
 
     // This function repeatedly propagates constraints until it can no longer make any
