@@ -260,9 +260,9 @@ impl CandidateToGroups {
 #[repr(C, align(64))]
 pub struct Board {
     candidates: [CandidateSet; 81],
-    candidate_to_groups: CandidateToGroups,
     values: [Value; 81],
     num_remaining_cells: usize,
+    candidate_to_groups: CandidateToGroups,
 }
 
 // This function finds the first CandidateSet with a single set bit.
@@ -336,7 +336,12 @@ impl Board {
         (0..81).all(|idx| {
             self.values[idx].is_set()
                 && all_neighbors(idx).iter().all(|&other_idx| {
-                    idx == other_idx || self.values[other_idx] != self.values[idx]
+                    unsafe {
+                        core::intrinsics::assume(other_idx < 81);
+                    }
+                    let is_same_idx = idx == other_idx;
+                    let is_diff_value = self.values[other_idx] != self.values[idx];
+                    is_same_idx | is_diff_value
                 })
         })
     }
@@ -386,7 +391,6 @@ impl Board {
             core::intrinsics::assume(b < 9);
         }
 
-        // No candidate is available...
         for i in 0..9 {
             self.candidate_to_groups
                 .mut_groups_for_candidate(i)
@@ -394,20 +398,12 @@ impl Board {
                 .mut_row_candidates(r)
                 // At this position.
                 .remove_candidate(Row::group_idx(idx) as Value);
-        }
-
-        // No candidate is available...
-        for i in 0..9 {
             self.candidate_to_groups
                 .mut_groups_for_candidate(i)
                 // In this column...
                 .mut_col_candidates(c)
                 // At this position.
                 .remove_candidate(Col::group_idx(idx) as Value);
-        }
-
-        // No candidate is available...
-        for i in 0..9 {
             self.candidate_to_groups
                 .mut_groups_for_candidate(i)
                 // In this box...
@@ -528,9 +524,7 @@ impl Board {
             .for_each(|(i, (a, &c))| {
                 let is_set = c.is_set() as u16;
                 let n = c.count_ones() as u16;
-                // This hack generates i % 3 using magic numbers.
-                // We have to do this because SIMD doesn't support integer division.
-                let m = ((i as u16) - (((i as u16) * 171) >> 9) * 3) as u16;
+                let m = (i as u16) % 3;
                 *a = is_set << 15 | n << 10 | m << 8 | (i as u16);
             });
 
