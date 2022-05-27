@@ -268,7 +268,7 @@ fn single_candidate_position(data: &[CandidateSet]) -> Option<usize> {
         .iter()
         // Equivalent to (e.count_ones() == 1)
         // Works on processors that don't have vectorized popcount.
-        .map(|&e| (e != 0u16) & ((e & (e - 1)) == 0) )
+        .map(|&e| (e != 0u16) & ((e & (e - 1)) == 0))
         .enumerate()
         // Positions with a single candidate are marked with their index, else data.len().
         .map(|(a, b)| if b { a } else { data.len() } as u8)
@@ -487,51 +487,27 @@ impl Board {
     // This is useful because this is the easiest cell to exhaustively check with backtracking.
     #[inline(never)]
     fn most_constrained_cell(&self) -> CellIdx {
-        const N: usize = 16;
-        const ARRAY_SIZE: usize = ((81 + N - 1) / N) * N;
-
-        // This array holds values of the following format for each cell
+        // Each cell is assigned an 16-bit code like the following:
         // <has_zero_candidates> (1 bit) - to toss out finsihed cells
         // <num_candidates> (4 bits, with one extra) - to prefer cells with fewer candidates
         // <cell_id % 3> (2 bits)
         //   <cell_id % 3> is a poor-man's randomization. Without it, the solver will prefer cells
         //   near the end of the array, leading to bunched backtracking that clears fewer candidates.
         //   With it, earlier cells may trump later ones, leading to more even candidate clearing.
-        // <idx> - for the argmin
-        let mut arr = [0xFFFFu16; ARRAY_SIZE];
-        arr.iter_mut()
-            .zip(self.candidates.iter())
+        // <idx> (8 bits) - for the argmin
+        (self
+            .candidates
+            .iter()
             .enumerate()
-            .for_each(|(i, (a, &c))| {
+            .map(|(i, &c)| {
                 let is_set = c.is_set() as u16;
                 let n = c.count_ones() as u16;
                 let m = (i as u16) % 3;
-                *a = is_set << 15 | n << 10 | m << 8 | (i as u16);
-            });
-
-        let best_vals = arr.chunks(N).fold([0xFFFFu16; N], |best_vals, vals| {
-            let mut out_vals = [0xFFFFu16; N];
-
-            let o = out_vals.iter_mut();
-            let a = best_vals.iter();
-            let b = vals.iter();
-            o.zip(a.zip(b)).for_each(|(out_val, (&best_val, &val))| {
-                let c = val < best_val;
-                *out_val = val * (c as u16) + best_val * ((!c) as u16);
-            });
-            out_vals
-        });
-
-        (best_vals.iter().fold(
-            0xFFFFu16,
-            |best_val, &val| {
-                if val < best_val {
-                    val
-                } else {
-                    best_val
-                }
-            },
-        ) & 0xFF)
+                is_set << 15 | n << 10 | m << 8 | (i as u16)
+            })
+            .min()
+            .unwrap()
+            & 0xFF)
             .into()
     }
 
