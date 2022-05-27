@@ -539,24 +539,14 @@ impl Board {
     }
 
     // This function detects whether the board has any conflicts that prove it is unsolveable.
-    #[inline(never)]
     fn has_conflict(&self) -> bool {
-        const N: usize = 32;
-
-        let cand_chunks = self.candidates.chunks(N);
-        let group_chunks = self.candidate_to_groups.candidates.chunks(N);
-
-        // Check cells...
-        cand_chunks
-            // And then (value, group) pairs..
-            .chain(group_chunks)
-            // To see if any have no candidates.
-            .any(|c_chunk| c_chunk.iter().fold(false, |acc, &cands| acc | (cands == 0)))
+        let arrs: [&[CandidateSet]; 2] = [&self.candidates, &self.candidate_to_groups.candidates];
+        arrs.iter()
+            .any(|arr| arr.iter().fold(false, |acc, &cands| acc | (cands == 0)))
     }
 
     // This function finds and sets a 'naked single' if one exists.
     // A naked single is a cell that only has one candidate value.
-    #[inline(never)]
     fn set_naked_single(&mut self) -> bool {
         // The candidates array contains a bitset of candidates for every position.
         // If any of these bitsets contains a single bit, it must be a naked single!
@@ -574,7 +564,6 @@ impl Board {
 
     // This function finds and sets a 'hidden single' if one exists.
     // A hidden single is a value that is only viable at one cell in a group.
-    #[inline(never)]
     fn set_hidden_singles(&mut self) -> bool {
         // The candidate_to_groups_mapping tells where each value is viable in each group.
         // If there are any single-bit values in that array, that is a hidden single!
