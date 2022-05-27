@@ -1,12 +1,6 @@
 #![feature(core_intrinsics)]
-#![feature(const_assume)]
-#![feature(stdsimd)]
-#![feature(slice_as_chunks)]
 
-extern crate aligned;
 extern crate structopt;
-use aligned::{Aligned, A64};
-use core::arch::x86_64::*;
 use std::fmt;
 use std::fs::File;
 use std::io::{self, BufRead};
@@ -269,32 +263,19 @@ pub struct Board {
 // This is the heart of constraint propagation, so it should be
 // AS FAST AS POSSIBLE!!!
 fn single_candidate_position(data: &[CandidateSet]) -> Option<usize> {
-    // Chunk the input array so that many positions are considered at once.
-    data.chunks(32).enumerate().find_map(|(chunk, s)| {
-        unsafe {
-            let mut a: Aligned<A64, _> = Aligned([0u8; 32]);
-            let arr = a.as_mut_slice();
-            arr.iter_mut()
-                .zip(s.iter())
-                // Calculate whether this position has a single bit.
-                // We can ignore the case where c == 0 because that would imply a conflict.
-                .for_each(|(a, &c)| *a = (((c & (c - 1)) == 0) as u8) * 0xFF);
-            let ptr = arr.as_ptr();
+    // Idea - use auto-vectorization to let the compiler decide how to chunk the input.
+    let k = data
+        .iter()
+        // Equivalent to (e.count_ones() == 1)
+        // Works on processors that don't have vectorized popcount.
+        .map(|&e| (e != 0u16) & ((e & (e - 1)) == 0) )
+        .enumerate()
+        // Positions with a single candidate are marked with their index, else data.len().
+        .map(|(a, b)| if b { a } else { data.len() } as u8)
+        .min()
+        .unwrap() as usize;
 
-            // Load 32 bytes of 0 or 0xFF.
-            let packed_bits = _mm256_load_si256(ptr as *const __m256i);
-            // Pack the first bit of each into a u32.
-            let bitmask = _mm256_movemask_epi8(packed_bits) as u32;
-
-            // This is the only branch needed to check a whole chunk of positions.
-            // We simply check if our special bit array is non-zero, and find the first bit set.
-            if bitmask != 0 {
-                Some(chunk * 32 + (bitmask.trailing_zeros() as usize))
-            } else {
-                None
-            }
-        }
-    })
+    (k != data.len()).then(|| k)
 }
 
 // These are the possible outcomes of constraint propagation.
@@ -528,35 +509,30 @@ impl Board {
                 *a = is_set << 15 | n << 10 | m << 8 | (i as u16);
             });
 
-        unsafe {
-            let best_vals =
-                arr.as_chunks_unchecked::<N>()
-                    .iter()
-                    .fold([0xFFFFu16; N], |best_vals, vals| {
-                        let mut out_vals = [0xFFFFu16; N];
+        let best_vals = arr.chunks(N).fold([0xFFFFu16; N], |best_vals, vals| {
+            let mut out_vals = [0xFFFFu16; N];
 
-                        let o = out_vals.iter_mut();
-                        let a = best_vals.iter();
-                        let b = vals.iter();
-                        o.zip(a.zip(b)).for_each(|(out_val, (&best_val, &val))| {
-                            let c = val < best_val;
-                            *out_val = val * (c as u16) + best_val * ((!c) as u16);
-                        });
-                        out_vals
-                    });
+            let o = out_vals.iter_mut();
+            let a = best_vals.iter();
+            let b = vals.iter();
+            o.zip(a.zip(b)).for_each(|(out_val, (&best_val, &val))| {
+                let c = val < best_val;
+                *out_val = val * (c as u16) + best_val * ((!c) as u16);
+            });
+            out_vals
+        });
 
-            (best_vals.iter().fold(
-                0xFFFFu16,
-                |best_val, &val| {
-                    if val < best_val {
-                        val
-                    } else {
-                        best_val
-                    }
-                },
-            ) & 0xFF)
-                .into()
-        }
+        (best_vals.iter().fold(
+            0xFFFFu16,
+            |best_val, &val| {
+                if val < best_val {
+                    val
+                } else {
+                    best_val
+                }
+            },
+        ) & 0xFF)
+            .into()
     }
 
     // This function repeatedly propagates constraints until it can no longer make any
@@ -754,11 +730,11 @@ struct Args {
     rounds: u32,
 
     /// File argument with one board per line
-    #[structopt(short, long, default_value = "")]
+    #[structopt(long, default_value = "")]
     boards_file: String,
 
     /// Sudoku board argument
-    #[structopt(short, long, default_value = "")]
+    #[structopt(long, default_value = "")]
     board: String,
 }
 
