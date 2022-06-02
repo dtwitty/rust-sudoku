@@ -263,19 +263,18 @@ pub struct Board {
 // This is the heart of constraint propagation, so it should be
 // AS FAST AS POSSIBLE!!!
 fn single_candidate_position(data: &[CandidateSet]) -> Option<usize> {
-    // Idea - use auto-vectorization to let the compiler decide how to chunk the input.
-    let k = data
-        .iter()
-        // Equivalent to (e.count_ones() == 1)
-        // Works on processors that don't have vectorized popcount.
-        .map(|&e| (e != 0u16) & ((e & (e - 1)) == 0))
-        .enumerate()
-        // Positions with a single candidate are marked with their index, else data.len().
-        .map(|(a, b)| if b { a } else { data.len() } as u8)
-        .min()
-        .unwrap() as usize;
+    const N: usize = 32;
+    data.chunks(N).enumerate().find_map(|(i, c)| {
+        let k = c
+            .iter()
+            .map(|&e| (e != 0) & ((e & (e - 1)) == 0))
+            .enumerate()
+            .map(|(a, b)| if b { a } else { N } as u8)
+            .min()
+            .unwrap() as usize;
 
-    (k != data.len()).then(|| k)
+        (k != N).then(|| i * N + k)
+    })
 }
 
 // These are the possible outcomes of constraint propagation.
@@ -540,9 +539,12 @@ impl Board {
 
     // This function detects whether the board has any conflicts that prove it is unsolveable.
     fn has_conflict(&self) -> bool {
+        const N: usize = 64;
         let arrs: [&[CandidateSet]; 2] = [&self.candidates, &self.candidate_to_groups.candidates];
-        arrs.iter()
-            .any(|arr| arr.iter().fold(false, |acc, &cands| acc | (cands == 0)))
+        arrs.iter().any(|arr| {
+            arr.chunks(N)
+                .any(|a| a.iter().fold(false, |acc, &cands| acc | (cands == 0)))
+        })
     }
 
     // This function finds and sets a 'naked single' if one exists.
