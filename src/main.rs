@@ -1,6 +1,7 @@
 #![feature(core_intrinsics)]
 
 extern crate structopt;
+use rayon::prelude::*;
 use std::fmt;
 use std::fs::File;
 use std::io::{self, BufRead};
@@ -703,6 +704,10 @@ struct Args {
     /// Sudoku board argument
     #[structopt(long, default_value = "")]
     board: String,
+
+    /// Whether to solve boards in parallel
+    #[structopt(long)]
+    parallel: bool,
 }
 
 fn read_lines<P>(filename: P) -> io::Result<io::Lines<io::BufReader<File>>>
@@ -747,7 +752,13 @@ fn main() {
         if !args.board.is_empty() {
             do_board(&args, &args.board);
         } else if let Ok(lines) = read_lines(&args.boards_file) {
-            lines.for_each(|r| do_board(&args, &r.unwrap()));
+            if args.parallel {
+                lines
+                    .par_bridge()
+                    .for_each(|r| do_board(&args, &r.unwrap()));
+            } else {
+                lines.for_each(|r| do_board(&args, &r.unwrap()));
+            }
         } else {
             panic!("Must provide either --boards_file or --board !")
         }
