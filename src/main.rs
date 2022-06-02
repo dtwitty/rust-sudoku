@@ -489,11 +489,11 @@ impl Board {
         // Each cell is assigned an 16-bit code like the following:
         // <has_zero_candidates> (1 bit) - to toss out finsihed cells
         // <num_candidates> (4 bits, with one extra) - to prefer cells with fewer candidates
-        // <cell_id % 3> (2 bits)
-        //   <cell_id % 3> is a poor-man's randomization. Without it, the solver will prefer cells
+        // <cell_id % 6> (3 bits)
+        //   <cell_id % 6> is a poor-man's randomization. Without it, the solver will prefer cells
         //   near the end of the array, leading to bunched backtracking that clears fewer candidates.
         //   With it, earlier cells may trump later ones, leading to more even candidate clearing.
-        // <idx> (8 bits) - for the argmin
+        // <idx> (7 bits) - for the argmin
         (self
             .candidates
             .iter()
@@ -501,12 +501,12 @@ impl Board {
             .map(|(i, &c)| {
                 let is_set = c.is_set() as u16;
                 let n = c.count_ones() as u16;
-                let m = (i as u16) % 3;
-                is_set << 15 | n << 10 | m << 8 | (i as u16)
+                let m = (i as u16) % 6;
+                is_set << 15 | n << 10 | m << 7 | (i as u16)
             })
             .min()
             .unwrap()
-            & 0xFF)
+            & 0x7F)
             .into()
     }
 
