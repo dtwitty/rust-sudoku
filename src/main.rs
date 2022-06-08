@@ -264,18 +264,15 @@ pub struct Board {
 // This is the heart of constraint propagation, so it should be
 // AS FAST AS POSSIBLE!!!
 fn single_candidate_position(data: &[CandidateSet]) -> Option<usize> {
-    const N: usize = 32;
-    data.chunks(N).enumerate().find_map(|(i, c)| {
-        let k = c
-            .iter()
-            .map(|&e| (e != 0) & ((e & (e - 1)) == 0))
-            .enumerate()
-            .map(|(a, b)| if b { a } else { N } as u8)
-            .min()
-            .unwrap() as usize;
+    let k = data
+        .iter()
+        .map(|&e| (e & (e - 1)) == 0)
+        .enumerate()
+        .map(|(a, b)| if b { a } else { data.len() } as u8)
+        .min()
+        .unwrap() as usize;
 
-        (k != N).then(|| i * N + k)
-    })
+    (k != data.len()).then(|| k)
 }
 
 // These are the possible outcomes of constraint propagation.
@@ -540,12 +537,12 @@ impl Board {
 
     // This function detects whether the board has any conflicts that prove it is unsolveable.
     fn has_conflict(&self) -> bool {
-        const N: usize = 64;
-        let arrs: [&[CandidateSet]; 2] = [&self.candidates, &self.candidate_to_groups.candidates];
-        arrs.iter().any(|arr| {
-            arr.chunks(N)
-                .any(|a| a.iter().fold(false, |acc, &cands| acc | (cands == 0)))
-        })
+        let has_any_zeros = |arr: &[CandidateSet]| {
+            arr
+            .iter()
+            .fold(false, |acc, &cands| acc | (cands == 0))
+        };
+        has_any_zeros(&self.candidates) || has_any_zeros(&self.candidate_to_groups.candidates)
     }
 
     // This function finds and sets a 'naked single' if one exists.
