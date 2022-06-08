@@ -244,9 +244,8 @@ impl CandidateToGroups {
             core::intrinsics::assume(v < 9);
         }
         let start = (v * 9 * 3) as usize;
-        let end = ((v + 1) * 9 * 3) as usize;
         MutGroupsForCandidate {
-            groups: &mut self.candidates[start..end],
+            groups: &mut self.candidates[start..],
         }
     }
 }
