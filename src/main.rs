@@ -130,24 +130,6 @@ impl Group for Box {
         let box_col = col / 3;
         box_row * 3 + box_col
     }
-
-    fn cells(g: GroupNum) -> GroupCells {
-        unsafe {
-            core::intrinsics::assume(g < 9);
-        }
-        let s = STARTS[g];
-        [
-            s + 0,
-            s + 1,
-            s + 2,
-            s + 9,
-            s + 10,
-            s + 11,
-            s + 18,
-            s + 19,
-            s + 20,
-        ]
-    }
 }
 
 fn all_neighbors(idx: CellIdx) -> [CellIdx; 27] {
