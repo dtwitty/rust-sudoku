@@ -17,10 +17,16 @@ type GroupCells = [CellIdx; 9];
 // Groups are collections of cells that must contain 1-9.
 // They are implemented such that the same code works for a Row, Col, or Box.
 trait Group {
+    // What is the `idx`th cell in the `g`th group of this type?
     fn cell_at(g: GroupNum, idx: GroupIdx) -> CellIdx;
+    
+    // What is the index of this cell within groups of this type?
     fn group_idx(idx: CellIdx) -> GroupIdx;
+    
+    // Which group of this type is the cell in?
     fn for_cell(idx: CellIdx) -> GroupNum;
 
+    // Which cells does the `gth` group of this type contain?
     fn cells(g: GroupNum) -> GroupCells {
         unsafe {
             core::intrinsics::assume(g < 9);
@@ -38,6 +44,7 @@ trait Group {
         ]
     }
 
+    // What cells see cell `idx` within this group?
     fn neighbors(idx: CellIdx) -> GroupCells {
         unsafe {
             core::intrinsics::assume(idx < 81);
@@ -96,10 +103,12 @@ impl Group for Col {
     }
 }
 
-// To encourage SIMD, box positions are precomputed.
-struct Box;
+// Boxes require some tricky math to compute indices.
+// While it is possible to compute these on the fly, these computations don't play well with SIMD.
+// To encourage SIMD, we precompute box positions where possible.
 const STARTS: [CellIdx; 9] = [0, 3, 6, 27, 30, 33, 54, 57, 60];
 const STEPS: [CellIdx; 9] = [0, 1, 2, 9, 10, 11, 18, 19, 20];
+struct Box;
 impl Group for Box {
     fn cell_at(g: GroupNum, idx: GroupIdx) -> CellIdx {
         unsafe {
@@ -132,6 +141,7 @@ impl Group for Box {
     }
 }
 
+// Get a list (with possible repeats!) of all cells that see this cell.
 fn all_neighbors(idx: CellIdx) -> [CellIdx; 27] {
     unsafe {
         core::intrinsics::assume(idx < 81);
@@ -143,6 +153,8 @@ fn all_neighbors(idx: CellIdx) -> [CellIdx; 27] {
     arr
 }
 
+// The type of values assigned to cells.
+// Can also encode an unknown value.
 pub type Value = u8;
 const NO_VALUE: Value = 255;
 
@@ -156,6 +168,11 @@ impl ValueMethods for Value {
     }
 }
 
+// Represents a bit field of candidates from [0, 9).
+// The lower bits are used to encode whether a candidate is available.
+// The upper bits are used to encode flags, like whether a selection has been made.
+// A cell with a selected candidate will be equal to SET_CANDS, and have no lower bits set.
+// A CandidateSet with value 0 generally encodes a conflict, implying this board can't be solved.
 pub type CandidateSet = u16;
 const ALL_CANDS: CandidateSet = 511;
 const SET_CANDS: CandidateSet = 0x600;
@@ -214,6 +231,8 @@ impl<'a> MutGroupsForCandidate<'a> {
     }
 }
 
+// Encodes the following information:
+//   for value `i`, in some group (row, col, or box), which cells of that group can hold `i`?
 #[derive(Debug, Copy, Clone)]
 #[repr(C, align(64))]
 struct CandidateToGroups {
@@ -461,18 +480,18 @@ impl Board {
         }
     }
 
-    // This function identifies the cell with the most constraints.
+    // This function identifies the cell with the most constraints (ie fewest candidates).
     // This is useful because this is the easiest cell to exhaustively check with backtracking.
     #[inline(never)]
     fn most_constrained_cell(&self) -> CellIdx {
-        // Each cell is assigned an 16-bit code like the following:
-        // <has_zero_candidates> (1 bit) - to toss out finsihed cells
+        // Each cell is assigned a 16-bit code like the following:
+        // <has_zero_candidates> (1 bit) - to prefer unfinished cells
         // <num_candidates> (4 bits, with one extra) - to prefer cells with fewer candidates
-        // <cell_id % 6> (3 bits)
+        // <cell_id % 6> (3 bits) - heuristic
         //   <cell_id % 6> is a poor-man's randomization. Without it, the solver will prefer cells
         //   near the end of the array, leading to bunched backtracking that clears fewer candidates.
         //   With it, earlier cells may trump later ones, leading to more even candidate clearing.
-        // <idx> (7 bits) - for the argmin
+        // <idx> (7 bits) - holds the argmin index that will be returned.
         (self
             .candidates
             .iter()
