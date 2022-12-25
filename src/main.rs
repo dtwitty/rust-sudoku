@@ -538,9 +538,7 @@ impl Board {
     // This function detects whether the board has any conflicts that prove it is unsolveable.
     fn has_conflict(&self) -> bool {
         let has_any_zeros = |arr: &[CandidateSet]| {
-            arr
-            .iter()
-            .fold(false, |acc, &cands| acc | (cands == 0))
+            arr.chunks(64).any(|c| c.iter().fold(false, |acc, &cands| acc | (cands == 0)))
         };
         has_any_zeros(&self.candidates) || has_any_zeros(&self.candidate_to_groups.candidates)
     }
