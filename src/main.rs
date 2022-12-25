@@ -19,10 +19,10 @@ type GroupCells = [CellIdx; 9];
 trait Group {
     // What is the `idx`th cell in the `g`th group of this type?
     fn cell_at(g: GroupNum, idx: GroupIdx) -> CellIdx;
-    
+
     // What is the index of this cell within groups of this type?
     fn group_idx(idx: CellIdx) -> GroupIdx;
-    
+
     // Which group of this type is the cell in?
     fn for_cell(idx: CellIdx) -> GroupNum;
 
@@ -264,15 +264,20 @@ pub struct Board {
 // This is the heart of constraint propagation, so it should be
 // AS FAST AS POSSIBLE!!!
 fn single_candidate_position(data: &[CandidateSet]) -> Option<usize> {
-    let k = data
-        .iter()
-        .map(|&e| (e & (e - 1)) == 0)
+    const N: usize = 81;
+    data.chunks(N)
         .enumerate()
-        .map(|(a, b)| if b { a } else { data.len() } as u8)
-        .min()
-        .unwrap() as usize;
-
-    (k != data.len()).then(|| k)
+        .filter_map(|(i, c)| {
+            let k = c
+                .iter()
+                .map(|&e| (e & (e - 1)) == 0)
+                .enumerate()
+                .map(|(a, b)| if b { a } else { c.len() } as u8)
+                .min()
+                .unwrap() as usize;
+            (k != c.len()).then(|| k + i * N)
+        })
+        .next()
 }
 
 // These are the possible outcomes of constraint propagation.
@@ -538,7 +543,8 @@ impl Board {
     // This function detects whether the board has any conflicts that prove it is unsolveable.
     fn has_conflict(&self) -> bool {
         let has_any_zeros = |arr: &[CandidateSet]| {
-            arr.chunks(64).any(|c| c.iter().fold(false, |acc, &cands| acc | (cands == 0)))
+            arr.chunks(64)
+                .any(|c| c.iter().fold(false, |acc, &cands| acc | (cands == 0)))
         };
         has_any_zeros(&self.candidates) || has_any_zeros(&self.candidate_to_groups.candidates)
     }
