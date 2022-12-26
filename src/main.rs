@@ -275,7 +275,7 @@ fn single_candidate_position(data: &[CandidateSet]) -> Option<usize> {
                 .map(|(a, b)| if b { a } else { c.len() } as u8)
                 .min()
                 .unwrap() as usize;
-            (k != c.len()).then(|| k + i * N)
+            (k != c.len()).then_some(k + i * N)
         })
         .next()
 }
@@ -656,11 +656,11 @@ impl fmt::Display for Board {
                 } else {
                     write!(f, ".").unwrap();
                 }
-                write!(f, "{}", sep).unwrap();
+                write!(f, "{sep}").unwrap();
             }
             writeln!(f).unwrap();
             if r == 2 || r == 5 {
-                writeln!(f, "{}", LANE_SEP).unwrap();
+                writeln!(f, "{LANE_SEP}").unwrap();
             }
         }
         Ok(())
@@ -720,11 +720,11 @@ where
 }
 
 fn do_board(args: &Args, line: &str) {
-    let o = parse_board(&line);
+    let o = parse_board(line);
     if let Some(mut board) = o {
         if args.print {
             println!("\nUnsolved:\n");
-            print!("{}", board);
+            print!("{board}");
             println!("\n---------------------\n");
         }
 
@@ -732,7 +732,7 @@ fn do_board(args: &Args, line: &str) {
 
         if let Some(solved_board) = solved {
             if args.print {
-                print!("{}", solved_board);
+                print!("{solved_board}");
             }
             if args.verify && !solved_board.is_complete() {
                 panic!("Invalid solved board!");
