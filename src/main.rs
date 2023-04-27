@@ -280,6 +280,11 @@ fn single_candidate_position(data: &[CandidateSet]) -> Option<usize> {
         .next()
 }
 
+fn has_any_zeros(arr: &[CandidateSet]) -> bool {
+    arr.chunks(64)
+        .any(|c| c.iter().map(|&x| x).min().unwrap() == 0)
+}
+
 // These are the possible outcomes of constraint propagation.
 #[derive(PartialEq)]
 enum ConstraintPropagationResult {
@@ -347,7 +352,6 @@ impl Board {
 
     // Set a value at a cell.
     // This function handles updating the constraint propagation data structures.
-    #[inline(never)]
     fn set_value_at(&mut self, idx: CellIdx, v: Value) {
         unsafe {
             core::intrinsics::assume(idx < 81);
@@ -487,7 +491,6 @@ impl Board {
 
     // This function identifies the cell with the most constraints (ie fewest candidates).
     // This is useful because this is the easiest cell to exhaustively check with backtracking.
-    #[inline(never)]
     fn most_constrained_cell(&self) -> CellIdx {
         // Each cell is assigned a 16-bit code like the following:
         // <has_zero_candidates> (1 bit) - to prefer unfinished cells
@@ -528,25 +531,19 @@ impl Board {
         if self.is_solved() {
             return ConstraintPropagationResult::Solved;
         }
-        if self.has_conflict() {
+        if has_any_zeros(&self.candidates) {
             return ConstraintPropagationResult::FoundConflict;
         }
         if self.set_naked_single() {
             return ConstraintPropagationResult::PropagatedConstraint;
         }
+        if has_any_zeros(&self.candidate_to_groups.candidates) {
+            return ConstraintPropagationResult::FoundConflict;
+        }
         if self.set_hidden_singles() {
             return ConstraintPropagationResult::PropagatedConstraint;
         }
         ConstraintPropagationResult::NoConstraintsPropagated
-    }
-
-    // This function detects whether the board has any conflicts that prove it is unsolveable.
-    fn has_conflict(&self) -> bool {
-        let has_any_zeros = |arr: &[CandidateSet]| {
-            arr.chunks(64)
-                .any(|c| c.iter().fold(false, |acc, &cands| acc | (cands == 0)))
-        };
-        has_any_zeros(&self.candidates) || has_any_zeros(&self.candidate_to_groups.candidates)
     }
 
     // This function finds and sets a 'naked single' if one exists.
@@ -674,8 +671,9 @@ fn parse_board(line: &str) -> Option<Board> {
         return None;
     }
 
-    line.chars().enumerate().for_each(|(idx, c)| {
-        if let Some(d) = c.to_digit(10) {
+    line.bytes().enumerate().for_each(|(idx, c)| {
+        let d = c - b'0';
+        if d > 0 && d <= 9 {
             board.set_value_at(idx, (d - 1) as Value);
         }
     });
