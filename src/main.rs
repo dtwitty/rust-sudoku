@@ -299,6 +299,7 @@ fn single_candidate_position(data: &[CandidateSet]) -> Option<usize> {
 
 fn has_any_zeros(arr: &[CandidateSet]) -> bool {
     arr.chunks(64)
+        .rev()
         .any(|c| c.iter().map(|&x| x).min().unwrap() == 0)
 }
 
