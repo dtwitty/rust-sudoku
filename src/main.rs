@@ -108,6 +108,29 @@ impl Group for Col {
 // To encourage SIMD, we precompute box positions where possible.
 const STARTS: [CellIdx; 9] = [0, 3, 6, 27, 30, 33, 54, 57, 60];
 const STEPS: [CellIdx; 9] = [0, 1, 2, 9, 10, 11, 18, 19, 20];
+const GROUP_IDXS: [GroupIdx; 81] = [
+    0, 1, 2, 0, 1, 2, 0, 1, 2,
+    3, 4, 5, 3, 4, 5, 3, 4, 5,
+    6, 7, 8, 6, 7, 8, 6, 7, 8,
+    0, 1, 2, 0, 1, 2, 0, 1, 2,
+    3, 4, 5, 3, 4, 5, 3, 4, 5,
+    6, 7, 8, 6, 7, 8, 6, 7, 8,
+    0, 1, 2, 0, 1, 2, 0, 1, 2,
+    3, 4, 5, 3, 4, 5, 3, 4, 5,
+    6, 7, 8, 6, 7, 8, 6, 7, 8
+];
+const BOXES: [GroupNum; 81] = [
+    0, 0, 0, 1, 1, 1, 2, 2, 2,
+    0, 0, 0, 1, 1, 1, 2, 2, 2,
+    0, 0, 0, 1, 1, 1, 2, 2, 2,
+    3, 3, 3, 4, 4, 4, 5, 5, 5,
+    3, 3, 3, 4, 4, 4, 5, 5, 5,
+    3, 3, 3, 4, 4, 4, 5, 5, 5,
+    6, 6, 6, 7, 7, 7, 8, 8, 8,
+    6, 6, 6, 7, 7, 7, 8, 8, 8,
+    6, 6, 6, 7, 7, 7, 8, 8, 8
+];
+
 struct Box;
 impl Group for Box {
     fn cell_at(g: GroupNum, idx: GroupIdx) -> CellIdx {
@@ -124,20 +147,14 @@ impl Group for Box {
         unsafe {
             core::intrinsics::assume(idx < 81);
         }
-        let row = idx / 9;
-        let col = idx % 9;
-        (row % 3) * 3 + col % 3
+        GROUP_IDXS[idx]
     }
 
     fn for_cell(idx: CellIdx) -> GroupNum {
         unsafe {
             core::intrinsics::assume(idx < 81);
         }
-        let row = idx / 9;
-        let col = idx % 9;
-        let box_row = row / 3;
-        let box_col = col / 3;
-        box_row * 3 + box_col
+        BOXES[idx]
     }
 }
 
