@@ -9,9 +9,9 @@ structopt = "0.3"
 rayon = "*"
 
 [profile.release]
-debug = true
+#debug = true
 opt-level = 3
 
 [profile.release.package."*"]
-debug = true
+#debug = true
 opt-level = 3

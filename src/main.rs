@@ -1,4 +1,7 @@
 #![feature(core_intrinsics)]
+#![feature(portable_simd)]
+#![feature(const_trait_impl)]
+#![feature(const_assume)]
 
 extern crate structopt;
 use rayon::prelude::*;
@@ -6,6 +9,7 @@ use std::fmt;
 use std::fs::File;
 use std::io::{self, BufRead};
 use std::path::Path;
+use std::simd::Simd;
 use structopt::StructOpt;
 
 // These type aliases help differentiate different kinds of ints.
@@ -16,6 +20,7 @@ type GroupCells = [CellIdx; 9];
 
 // Groups are collections of cells that must contain 1-9.
 // They are implemented such that the same code works for a Row, Col, or Box.
+#[const_trait]
 trait Group {
     // What is the `idx`th cell in the `g`th group of this type?
     fn cell_at(g: GroupNum, idx: GroupIdx) -> CellIdx;
@@ -54,7 +59,7 @@ trait Group {
 }
 
 struct Row;
-impl Group for Row {
+impl const Group for Row {
     fn cell_at(g: GroupNum, idx: GroupIdx) -> CellIdx {
         unsafe {
             core::intrinsics::assume(g < 9);
@@ -79,7 +84,7 @@ impl Group for Row {
 }
 
 struct Col;
-impl Group for Col {
+impl const Group for Col {
     fn cell_at(g: GroupNum, idx: GroupIdx) -> CellIdx {
         unsafe {
             core::intrinsics::assume(g < 9);
@@ -109,30 +114,18 @@ impl Group for Col {
 const STARTS: [CellIdx; 9] = [0, 3, 6, 27, 30, 33, 54, 57, 60];
 const STEPS: [CellIdx; 9] = [0, 1, 2, 9, 10, 11, 18, 19, 20];
 const GROUP_IDXS: [GroupIdx; 81] = [
-    0, 1, 2, 0, 1, 2, 0, 1, 2,
-    3, 4, 5, 3, 4, 5, 3, 4, 5,
-    6, 7, 8, 6, 7, 8, 6, 7, 8,
-    0, 1, 2, 0, 1, 2, 0, 1, 2,
-    3, 4, 5, 3, 4, 5, 3, 4, 5,
-    6, 7, 8, 6, 7, 8, 6, 7, 8,
-    0, 1, 2, 0, 1, 2, 0, 1, 2,
-    3, 4, 5, 3, 4, 5, 3, 4, 5,
-    6, 7, 8, 6, 7, 8, 6, 7, 8
+    0, 1, 2, 0, 1, 2, 0, 1, 2, 3, 4, 5, 3, 4, 5, 3, 4, 5, 6, 7, 8, 6, 7, 8, 6, 7, 8, 0, 1, 2, 0, 1,
+    2, 0, 1, 2, 3, 4, 5, 3, 4, 5, 3, 4, 5, 6, 7, 8, 6, 7, 8, 6, 7, 8, 0, 1, 2, 0, 1, 2, 0, 1, 2, 3,
+    4, 5, 3, 4, 5, 3, 4, 5, 6, 7, 8, 6, 7, 8, 6, 7, 8,
 ];
 const BOXES: [GroupNum; 81] = [
-    0, 0, 0, 1, 1, 1, 2, 2, 2,
-    0, 0, 0, 1, 1, 1, 2, 2, 2,
-    0, 0, 0, 1, 1, 1, 2, 2, 2,
-    3, 3, 3, 4, 4, 4, 5, 5, 5,
-    3, 3, 3, 4, 4, 4, 5, 5, 5,
-    3, 3, 3, 4, 4, 4, 5, 5, 5,
-    6, 6, 6, 7, 7, 7, 8, 8, 8,
-    6, 6, 6, 7, 7, 7, 8, 8, 8,
-    6, 6, 6, 7, 7, 7, 8, 8, 8
+    0, 0, 0, 1, 1, 1, 2, 2, 2, 0, 0, 0, 1, 1, 1, 2, 2, 2, 0, 0, 0, 1, 1, 1, 2, 2, 2, 3, 3, 3, 4, 4,
+    4, 5, 5, 5, 3, 3, 3, 4, 4, 4, 5, 5, 5, 3, 3, 3, 4, 4, 4, 5, 5, 5, 6, 6, 6, 7, 7, 7, 8, 8, 8, 6,
+    6, 6, 7, 7, 7, 8, 8, 8, 6, 6, 6, 7, 7, 7, 8, 8, 8,
 ];
 
 struct Box;
-impl Group for Box {
+impl const Group for Box {
     fn cell_at(g: GroupNum, idx: GroupIdx) -> CellIdx {
         unsafe {
             core::intrinsics::assume(g < 9);
@@ -158,16 +151,49 @@ impl Group for Box {
     }
 }
 
+type NeighborMask = [[u16; 32]; 3];
 // Get a list (with possible repeats!) of all cells that see this cell.
-fn all_neighbors(idx: CellIdx) -> [CellIdx; 27] {
+const fn all_neighbors_pre(idx: CellIdx) -> NeighborMask {
     unsafe {
         core::intrinsics::assume(idx < 81);
     }
-    let mut arr: [CellIdx; 27] = [0; 27];
-    arr[..9].clone_from_slice(&Row::neighbors(idx));
-    arr[9..18].clone_from_slice(&Col::neighbors(idx));
-    arr[18..].clone_from_slice(&Box::neighbors(idx));
+    let mut arr = [[0; 32]; 3];
+    let mut i = 0;
+    while i < 9 {
+        let idx = Row::cell_at(Row::for_cell(idx), i);
+        arr[idx / 32][idx % 32] = 0xFFFF;
+        i += 1;
+    }
+    while i < 18 {
+        let idx = Col::cell_at(Col::for_cell(idx), i - 9);
+        arr[idx / 32][idx % 32] = 0xFFFF;
+        i += 1;
+    }
+    while i < 27 {
+        let idx = Box::cell_at(Box::for_cell(idx), i - 18);
+        arr[idx / 32][idx % 32] = 0xFFFF;
+        i += 1;
+    }
     arr
+}
+
+type AllNeighborMasks = [NeighborMask; 81];
+const fn calculate_all_neighbors() -> AllNeighborMasks {
+    let mut out = [[[0; 32]; 3]; 81];
+    let mut idx = 0;
+    while idx < 81 {
+        out[idx] = all_neighbors_pre(idx);
+        idx += 1;
+    }
+    out
+}
+const ALL_NEIGHBORS: AllNeighborMasks = calculate_all_neighbors();
+
+const fn all_neighbors(idx: CellIdx) -> NeighborMask {
+    unsafe {
+        core::intrinsics::assume(idx < 81);
+        ALL_NEIGHBORS[idx]
+    }
 }
 
 // The type of values assigned to cells.
@@ -271,7 +297,7 @@ impl CandidateToGroups {
 #[derive(Debug, Copy, Clone)]
 #[repr(C, align(64))]
 pub struct Board {
-    candidates: [CandidateSet; 81],
+    candidates: [CandidateSet; 96],
     values: [Value; 81],
     num_remaining_cells: usize,
     candidate_to_groups: CandidateToGroups,
@@ -316,7 +342,7 @@ impl Board {
     fn new() -> Board {
         Board {
             // Which values are candidates for this cell?
-            candidates: [ALL_CANDS; 81],
+            candidates: [ALL_CANDS; 96],
 
             // What is the solved value at this cell?
             values: [NO_VALUE; 81],
@@ -341,23 +367,19 @@ impl Board {
     fn is_complete(&self) -> bool {
         (0..81).all(|idx| {
             self.values[idx].is_set()
-                && all_neighbors(idx).iter().all(|&other_idx| {
-                    unsafe {
-                        core::intrinsics::assume(other_idx < 81);
-                    }
-                    let is_same_idx = idx == other_idx;
-                    let is_diff_value = self.values[other_idx] != self.values[idx];
-                    is_same_idx | is_diff_value
-                })
+                && Row::neighbors(idx)
+                    .iter()
+                    .chain(Col::neighbors(idx).iter())
+                    .chain(Box::neighbors(idx).iter())
+                    .all(|&other_idx| {
+                        unsafe {
+                            core::intrinsics::assume(other_idx < 81);
+                        }
+                        let is_same_idx = idx == other_idx;
+                        let is_diff_value = self.values[other_idx] != self.values[idx];
+                        is_same_idx | is_diff_value
+                    })
         })
-    }
-
-    // Get mutable candidates at a cell, assuming a valid index.
-    fn unsafe_mut_candidates_at(&mut self, idx: CellIdx) -> &mut CandidateSet {
-        unsafe {
-            core::intrinsics::assume(idx < 81);
-        }
-        &mut self.candidates[idx]
     }
 
     // Get candidates at a cell, assuming a valid index.
@@ -381,9 +403,17 @@ impl Board {
         self.num_remaining_cells -= 1;
 
         // Erase this value from the cell's neighbors.
-        all_neighbors(idx).iter().for_each(|&other_idx| {
-            self.unsafe_mut_candidates_at(other_idx).remove_candidate(v);
-        });
+        let neighbor_mask = all_neighbors(idx);
+        for i in 0..3 {
+            let m = neighbor_mask[i];
+            let c = &mut self.candidates[i * 32..(i + 1) * 32];
+            let mut ms: Simd<u16, 32> = Simd::from_slice(&m);
+            ms = ms & Simd::splat(1 << v);
+            ms = !ms;
+            let mut cs = Simd::from_slice(c);
+            cs = cs & ms;
+            c.clone_from_slice(cs.as_array());
+        }
 
         // Get the row, col, and box for this cell.
         let r = Row::for_cell(idx);
