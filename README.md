@@ -8,7 +8,7 @@ To build:
 cargo rustc --profile=release -- -C target-cpu=native -C opt-level=3
 ```
 
-To benchmark with hyperfine [hyperfine](https://crates.io/crates/hyperfine)
+To benchmark with [hyperfine](https://crates.io/crates/hyperfine)
 ```
 hyperfine -m 10 -w 2 "target/release/sudoku --boards-file puzzles/puzzles5_forum_hardest_1905_11+ --verify"
 ```
