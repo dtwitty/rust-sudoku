@@ -1,4 +1,33 @@
+# Sudoku
 A Sudoku solver meant for exploring high-performance coding styles (and learning Rust).
+
+## Building and Benchmarking
+
+To build:
+```
+cargo rustc --profile=release -- -C target-cpu=native -C opt-level=3
+```
+
+To benchmark with hyperfine [hyperfine](https://crates.io/crates/hyperfine)
+```
+hyperfine -m 10 -w 2 "target/release/sudoku --boards-file puzzles/puzzles5_forum_hardest_1905_11+ --verify"
+```
+
+On my machine (Macbook Pro 2021, M1 Pro, 32GB memory):
+```
+hyperfine -m 10 -w 2 "target/release/sudoku --boards-file puzzles/puzzles5_forum_hardest_1905_11+ --verify"
+Benchmark 1: target/release/sudoku --boards-file puzzles/puzzles5_forum_hardest_1905_11+ --verify
+  Time (mean ± σ):      2.632 s ±  0.047 s    [User: 2.614 s, System: 0.006 s]
+  Range (min … max):    2.602 s …  2.749 s    10 runs
+```
+
+To get your free beer 🍻:
+Create a PR with an improvement to this solver, and show that it is significantly better.
+Let $A$ be a baseline run from `main` and $B$ be the run from your branch. Hyperfine gives you $\mu$ and $\sigma$ for each, with equal $n = 10$.
+This is sufficient to run a [2-sample t-test](https://www.wolframalpha.com/input?i=two+sample+t+test).
+
+
+## About
 
 Incorporates the following solving techniques:
   * Max-Conflicts Backtracking
