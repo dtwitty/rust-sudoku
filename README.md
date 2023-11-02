@@ -22,9 +22,11 @@ Benchmark 1: target/release/sudoku --boards-file puzzles/puzzles5_forum_hardest_
 ```
 
 To get your free beer 🍻:
+
 Create a PR with an improvement to this solver, and show that it is significantly better.
-Let $A$ be a baseline run from `main` and $B$ be the run from your branch. Hyperfine gives you $\mu$ and $\sigma$ for each, with equal $n = 10$.
-This is sufficient to run a [2-sample t-test](https://www.wolframalpha.com/input?i=two+sample+t+test).
+The benchmarking script gives you $\mu$, $\sigma$, and $n$. Run the benchmark for both the main branch and your PR.
+Input those results into a [2-sample t-test](https://www.wolframalpha.com/input?i=two+sample+t+test), with significance level 0.05.
+If you show improvement, send the PR for review and we'll coordinate your free beer 🍻.
 
 
 ## About
