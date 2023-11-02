@@ -9,10 +9,11 @@ Incorporates the following solving techniques:
 This solver was written with the following principles:
   * Profile ruthelessly
   * Use SIMD where possible
-  * Use branchless algorithms
+    * Encourage the compiler to auto-vectorize
+  * Use branchless algorithms 
   * Minimize heap allocations
   * Prefer single-pass algorithms
-  * Make the cache your friend
+  * Encourage caching
   * Propagate constraints rather than compute them
 
 The core functions that speed up this solver are this:
@@ -22,4 +23,4 @@ The core functions that speed up this solver are this:
 This solver attempts to perform these actions as fast as possible, using every trick I can think of to cheese the compiler into outputting faster code.
 
 The optimal algorithm and constants will change depending on the processor (x86 vs arm) and available features (avx2, avx512)
-    * Where possible, this solver uses code that is friendly to auto-vectorization, so the compiler can do this for you 
+    * Where possible, this solver uses code that is friendly to auto-vectorization, so the compiler can do this for you
