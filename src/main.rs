@@ -1,12 +1,21 @@
 #![feature(core_intrinsics)]
 
-extern crate structopt;
-use rayon::prelude::*;
 use std::fmt;
 use std::fs::File;
 use std::io::{self, BufRead};
 use std::path::Path;
+
+use rayon::prelude::*;
 use structopt::StructOpt;
+
+macro_rules! assume {
+    ($condition:expr) => {
+        debug_assert!($condition);
+        unsafe {
+            core::intrinsics::assume($condition);
+        }
+    };
+}
 
 // These type aliases help differentiate different kinds of ints.
 type CellIdx = usize;
@@ -28,9 +37,8 @@ trait Group {
 
     // Which cells does the `gth` group of this type contain?
     fn cells(g: GroupNum) -> GroupCells {
-        unsafe {
-            core::intrinsics::assume(g < 9);
-        }
+        assume!(g < 9);
+
         [
             Self::cell_at(g, 0),
             Self::cell_at(g, 1),
@@ -46,9 +54,8 @@ trait Group {
 
     // What cells see cell `idx` within this group?
     fn neighbors(idx: CellIdx) -> GroupCells {
-        unsafe {
-            core::intrinsics::assume(idx < 81);
-        }
+        assume!(idx < 81);
+
         Self::cells(Self::for_cell(idx))
     }
 }
@@ -56,24 +63,21 @@ trait Group {
 struct Row;
 impl Group for Row {
     fn cell_at(g: GroupNum, idx: GroupIdx) -> CellIdx {
-        unsafe {
-            core::intrinsics::assume(g < 9);
-            core::intrinsics::assume(idx < 9);
-        }
+        assume!(g < 9);
+        assume!(idx < 9);
+
         9 * g + idx
     }
 
     fn group_idx(idx: CellIdx) -> GroupIdx {
-        unsafe {
-            core::intrinsics::assume(idx < 81);
-        }
+        assume!(idx < 81);
+
         idx % 9
     }
 
     fn for_cell(idx: CellIdx) -> GroupNum {
-        unsafe {
-            core::intrinsics::assume(idx < 81);
-        }
+        assume!(idx < 81);
+
         idx / 9
     }
 }
@@ -81,24 +85,21 @@ impl Group for Row {
 struct Col;
 impl Group for Col {
     fn cell_at(g: GroupNum, idx: GroupIdx) -> CellIdx {
-        unsafe {
-            core::intrinsics::assume(g < 9);
-            core::intrinsics::assume(idx < 9);
-        }
+        assume!(g < 9);
+        assume!(idx < 9);
+
         idx * 9 + g
     }
 
     fn group_idx(idx: CellIdx) -> GroupIdx {
-        unsafe {
-            core::intrinsics::assume(idx < 81);
-        }
+        assume!(idx < 81);
+
         idx / 9
     }
 
     fn for_cell(idx: CellIdx) -> GroupNum {
-        unsafe {
-            core::intrinsics::assume(idx < 81);
-        }
+        assume!(idx < 81);
+
         idx % 9
     }
 }
@@ -134,35 +135,31 @@ const BOXES: [GroupNum; 81] = [
 struct Box;
 impl Group for Box {
     fn cell_at(g: GroupNum, idx: GroupIdx) -> CellIdx {
-        unsafe {
-            core::intrinsics::assume(g < 9);
-            core::intrinsics::assume(idx < 9);
-        }
+        assume!(g < 9);
+        assume!(idx < 9);
+
         let start = STARTS[g];
         let step = STEPS[idx];
         start + step
     }
 
     fn group_idx(idx: CellIdx) -> GroupIdx {
-        unsafe {
-            core::intrinsics::assume(idx < 81);
-        }
+        assume!(idx < 81);
+
         GROUP_IDXS[idx]
     }
 
     fn for_cell(idx: CellIdx) -> GroupNum {
-        unsafe {
-            core::intrinsics::assume(idx < 81);
-        }
+        assume!(idx < 81);
+
         BOXES[idx]
     }
 }
 
 // Get a list (with possible repeats!) of all cells that see this cell.
 fn all_neighbors(idx: CellIdx) -> [CellIdx; 27] {
-    unsafe {
-        core::intrinsics::assume(idx < 81);
-    }
+    assume!(idx < 81);
+
     let mut arr: [CellIdx; 27] = [0; 27];
     arr[..9].clone_from_slice(&Row::neighbors(idx));
     arr[9..18].clone_from_slice(&Col::neighbors(idx));
@@ -209,9 +206,8 @@ impl CandidateSetMethods for CandidateSet {
         self.count_ones()
     }
     fn remove_candidate(&mut self, v: Value) {
-        unsafe {
-            core::intrinsics::assume(v < 9);
-        }
+        assume!(v < 9);
+
         *self &= !(1 << v);
     }
     fn is_set(&self) -> bool {
@@ -224,26 +220,23 @@ struct MutGroupsForCandidate<'a> {
 }
 impl<'a> MutGroupsForCandidate<'a> {
     fn mut_row_candidates(&mut self, r: usize) -> &mut CandidateSet {
-        unsafe {
-            core::intrinsics::assume(r < 9);
-            core::intrinsics::assume(r < self.groups.len());
-        }
+        assume!(r < 9);
+        assume!(r < self.groups.len());
+
         &mut self.groups[r]
     }
 
     fn mut_col_candidates(&mut self, c: usize) -> &mut CandidateSet {
-        unsafe {
-            core::intrinsics::assume(c < 9);
-            core::intrinsics::assume(9 + c < self.groups.len());
-        }
+        assume!(c < 9);
+        assume!(9 + c < self.groups.len());
+
         &mut self.groups[9 + c]
     }
 
     fn mut_box_candidates(&mut self, b: usize) -> &mut CandidateSet {
-        unsafe {
-            core::intrinsics::assume(b < 9);
-            core::intrinsics::assume(18 + b < self.groups.len());
-        }
+        assume!(b < 9);
+        assume!(18 + b < self.groups.len());
+
         &mut self.groups[18 + b]
     }
 }
@@ -258,9 +251,8 @@ struct CandidateToGroups {
 
 impl CandidateToGroups {
     fn mut_groups_for_candidate(&mut self, v: Value) -> MutGroupsForCandidate {
-        unsafe {
-            core::intrinsics::assume(v < 9);
-        }
+        assume!(v < 9);
+
         let start = (v * 9 * 3) as usize;
         MutGroupsForCandidate {
             groups: &mut self.candidates[start..],
@@ -356,10 +348,9 @@ impl Board {
         (0..81).all(|idx| {
             self.values[idx].is_set()
                 && all_neighbors(idx).iter().all(|&other_idx| {
-                    unsafe {
-                        core::intrinsics::assume(other_idx < 81);
-                    }
-                    let is_same_idx = idx == other_idx;
+                assume!(other_idx < 81);
+
+                let is_same_idx = idx == other_idx;
                     let is_diff_value = self.values[other_idx] != self.values[idx];
                     is_same_idx | is_diff_value
                 })
@@ -368,26 +359,22 @@ impl Board {
 
     // Get mutable candidates at a cell, assuming a valid index.
     fn unsafe_mut_candidates_at(&mut self, idx: CellIdx) -> &mut CandidateSet {
-        unsafe {
-            core::intrinsics::assume(idx < 81);
-        }
+        assume!(idx < 81);
+
         &mut self.candidates[idx]
     }
 
     // Get candidates at a cell, assuming a valid index.
     fn unsafe_candidates_at(&self, idx: CellIdx) -> &CandidateSet {
-        unsafe {
-            core::intrinsics::assume(idx < 81);
-        }
+        assume!(idx < 81);
+
         &self.candidates[idx]
     }
 
     // Set a value at a cell.
     // This function handles updating the constraint propagation data structures.
     fn set_value_at(&mut self, idx: CellIdx, v: Value) {
-        unsafe {
-            core::intrinsics::assume(idx < 81);
-        }
+        assume!(idx < 81);
 
         // Basic bookkeeping.
         self.values[idx] = v;
@@ -403,12 +390,12 @@ impl Board {
         let r = Row::for_cell(idx);
         let c = Col::for_cell(idx);
         let b = Box::for_cell(idx);
-        unsafe {
-            core::intrinsics::assume(v < 9);
-            core::intrinsics::assume(r < 9);
-            core::intrinsics::assume(c < 9);
-            core::intrinsics::assume(b < 9);
-        }
+
+        assume!(v < 9);
+        assume!(r < 9);
+        assume!(c < 9);
+        assume!(b < 9);
+
 
         for i in 0..9 {
             self.candidate_to_groups
@@ -521,7 +508,7 @@ impl Board {
         }
     }
 
-    // This function identifies the cell with the most constraints (ie fewest candidates).
+    // This function identifies the cell with the most constraints (ie the fewest candidates).
     // This is useful because this is the easiest cell to exhaustively check with backtracking.
     fn most_constrained_cell(&self) -> CellIdx {
         // Each cell is assigned a 16-bit code like the following:
@@ -603,7 +590,7 @@ impl Board {
         let o = single_candidate_position(&self.candidate_to_groups.candidates);
 
         if let Some(i) = o {
-            // We found a hidden single! We just need to extract its position information so
+            // We found a hidden single! We just need to extract its position information so that
             // we can set the value at the right cell.
             let group_idx = i % 9;
             let group_type = (i / 9) % 3;
@@ -704,8 +691,8 @@ fn parse_board(line: &str) -> Option<Board> {
     }
 
     line.bytes().enumerate().for_each(|(idx, c)| {
-        let d = c - b'0';
-        if d > 0 && d <= 9 {
+        if c >= b'1' && c <= b'9' {
+            let d = c - b'0';
             board.set_value_at(idx, (d - 1) as Value);
         }
     });
