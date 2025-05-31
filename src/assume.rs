@@ -4,7 +4,7 @@ macro_rules! assume {
     ($condition:expr) => {
         debug_assert!($condition);
         unsafe {
-            core::intrinsics::assume($condition);
+            core::hint::assert_unchecked($condition);
         }
     };
 }

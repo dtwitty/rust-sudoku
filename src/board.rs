@@ -277,7 +277,7 @@ impl Board {
             .enumerate()
             .map(|(i, &c)| {
                 let is_set = c.is_set() as u16;
-                let n = c.count_ones() as u16;
+                let n = c.num_candidates() as u16;
                 let m = (i as u16) % 6;
                 is_set << 15 | n << 10 | m << 7 | (i as u16)
             })

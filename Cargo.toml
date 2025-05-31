@@ -5,8 +5,8 @@ authors = ["dominickt"]
 edition = "2018"
 
 [dependencies]
-structopt = "0.3"
-rayon = "*"
+rayon = "1.10.0"
+clap = { version = "4.5.27", features = ["derive"] }
 
 [profile.release]
 debug = true

@@ -1,23 +1,19 @@
-#![feature(core_intrinsics)]
-
 mod low_level;
 mod types;
 mod assume;
 mod board;
 mod neighbors;
 
+use crate::board::*;
+use crate::types::*;
+use clap::Parser;
+use rayon::prelude::*;
 use std::fs::File;
 use std::io::{self, BufRead};
 use std::path::Path;
 
-use crate::board::*;
-use crate::types::*;
-use rayon::prelude::*;
-use structopt::StructOpt;
-
 /// Sudoku solver
-#[derive(StructOpt, Debug)]
-#[structopt(name = "sudoku")]
+#[derive(Parser, Debug)]
 struct Args {
     /// Print the unsolved and solved boards
     #[structopt(short, long)]
@@ -80,7 +76,7 @@ fn do_board(args: &Args, line: &str) {
 }
 
 fn main() {
-    let args = Args::from_args();
+    let args = Args::parse();
 
     for _ in 0..args.rounds {
         if !args.board.is_empty() {
