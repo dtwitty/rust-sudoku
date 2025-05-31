@@ -34,9 +34,30 @@ pub fn single_candidate_position(data: &[CandidateSet]) -> Option<usize> {
 pub fn has_any_zeros(arr: &[CandidateSet]) -> bool {
     // Process the data in chunks (to encourage SIMD)...
     arr.chunks(81)
-        // Process the data in reverse.
-        // We tend to set values early in the puzzle first, so conflicts appear later.
-        .rev()
         // Business logic here. This will compile to a simd min reduction.
         .any(|c| c.iter().map(|&x| x).min().unwrap() == 0)
+}
+
+pub enum ScanResult {
+    /// We found nothing interesting.
+    Nothing,
+
+    /// We found a conflict (a candidate set with no candidates).
+    Conflict,
+
+    /// We found a single candidate at the given position.
+    Single(usize),
+}
+
+/// This function scans the data for single candidate positions or conflicts.
+pub fn scan(data: &[CandidateSet]) -> ScanResult {
+    if has_any_zeros(data) {
+        return ScanResult::Conflict;
+    }
+
+    if let Some(pos) = single_candidate_position(data) {
+        return ScanResult::Single(pos);
+    }
+
+    ScanResult::Nothing
 }

@@ -1,4 +1,5 @@
 use crate::assume::*;
+use crate::board::ConstraintPropagationResult::NoConstraintsPropagated;
 use crate::low_level::*;
 use crate::neighbors::*;
 use crate::types::*;
@@ -299,49 +300,62 @@ impl Board {
 
     // This function attempts to propagate a constraint, or assert that the board is solved or unsolveable.
     fn try_propagate_constraints(&mut self) -> ConstraintPropagationResult {
+        use ConstraintPropagationResult::*;
         if self.is_solved() {
-            return ConstraintPropagationResult::Solved;
+            return Solved;
         }
-        if has_any_zeros(&self.candidates) {
-            return ConstraintPropagationResult::FoundConflict;
+
+        let naked_single = self.set_naked_single();
+        if naked_single != NoConstraintsPropagated {
+            return naked_single;
         }
-        if self.set_naked_single() {
-            return ConstraintPropagationResult::PropagatedConstraint;
+
+        let hidden_single = self.set_hidden_singles();
+        if hidden_single != NoConstraintsPropagated {
+            return hidden_single;
         }
-        if has_any_zeros(&self.candidate_to_groups.candidates) {
-            return ConstraintPropagationResult::FoundConflict;
-        }
-        if self.set_hidden_singles() {
-            return ConstraintPropagationResult::PropagatedConstraint;
-        }
-        ConstraintPropagationResult::NoConstraintsPropagated
+
+        NoConstraintsPropagated
     }
 
     // This function finds and sets a 'naked single' if one exists.
     // A naked single is a cell that only has one candidate value.
-    fn set_naked_single(&mut self) -> bool {
+    fn set_naked_single(&mut self) -> ConstraintPropagationResult {
         // The candidates array contains a bitset of candidates for every position.
         // If any of these bitsets contains a single bit, it must be a naked single!
-        let i = single_candidate_position(&self.candidates);
+        let scan_result = scan(&self.candidates);
 
-        if let Some(idx) = i {
-            let cands = self.candidates[idx];
-            let v = cands.trailing_zeros();
-            self.set_value_at(idx, v as Value);
-            return true;
+        match scan_result {
+            // We found a conflict, so we can't propagate any constraints.
+            ScanResult::Conflict => ConstraintPropagationResult::FoundConflict,
+
+            // We found a single candidate at the given position.
+            ScanResult::Single(idx) => {
+                let v = self.candidates[idx].trailing_zeros() as Value;
+                self.set_value_at(idx, v);
+                ConstraintPropagationResult::PropagatedConstraint
+            }
+
+            // We found nothing interesting.
+            ScanResult::Nothing => ConstraintPropagationResult::NoConstraintsPropagated,
         }
-
-        false
     }
 
     // This function finds and sets a 'hidden single' if one exists.
     // A hidden single is a value that is only viable at one cell in a group.
-    fn set_hidden_singles(&mut self) -> bool {
+    fn set_hidden_singles(&mut self) -> ConstraintPropagationResult {
         // The candidate_to_groups_mapping tells where each value is viable in each group.
         // If there are any single-bit values in that array, that is a hidden single!
-        let o = single_candidate_position(&self.candidate_to_groups.candidates);
+        let scan_result = scan(&self.candidate_to_groups.candidates);
+        match scan_result {
+            // We found nothing interesting.
+            ScanResult::Nothing => NoConstraintsPropagated,
 
-        if let Some(i) = o {
+            // We found a conflict, so we can't propagate any constraints.
+            ScanResult::Conflict => ConstraintPropagationResult::FoundConflict,
+
+            // We found a single candidate at the given position.
+            ScanResult::Single(i) => {
             // We found a hidden single! We just need to extract its position information so that
             // we can set the value at the right cell.
             let group_idx = i % 9;
@@ -361,11 +375,9 @@ impl Board {
             };
 
             self.set_value_at(idx, v as Value);
-            return true;
+                ConstraintPropagationResult::PropagatedConstraint
+            }
         }
-
-        // No hidden singles found :(
-        false
     }
 }
 
