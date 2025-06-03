@@ -50,6 +50,6 @@ impl CandidateSetMethods for CandidateSet {
         *self &= !(1 << v);
     }
     fn is_set(&self) -> bool {
-        *self & SET_CANDS == SET_CANDS
+        *self == SET_CANDS
     }
 }

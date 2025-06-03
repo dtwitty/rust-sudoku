@@ -35,6 +35,7 @@ impl<'a> MutGroupsForCandidate<'a> {
 // Encodes the following information:
 //   for value `i`, in some group (row, col, or box), which cells of that group can hold `i`?
 #[derive(Debug, Copy, Clone)]
+#[repr(C, align(64))]
 struct CandidateToGroups {
     candidates: [CandidateSet; 9 * 3 * 9],
 }
@@ -51,9 +52,11 @@ impl CandidateToGroups {
 }
 
 #[derive(Debug, Copy, Clone)]
+#[repr(C, align(64))]
 pub struct Board {
-    num_remaining_cells: u8,
     candidates: [CandidateSet; 81],
+    values: [Value; 81],
+    num_remaining_cells: usize,
     candidate_to_groups: CandidateToGroups,
 }
 
@@ -72,6 +75,9 @@ impl Board {
         Board {
             // Which values are candidates for this cell?
             candidates: [ALL_CANDS; 81],
+
+            // What is the solved value at this cell?
+            values: [NO_VALUE; 81],
 
             // How many cells are left to solve?
             num_remaining_cells: 81,
@@ -93,26 +99,15 @@ impl Board {
     // Is every cell set, and do its neighbors obey the Sudoku rules?
     pub fn is_complete(&self) -> bool {
         (0..81).all(|idx| {
-            self.candidates_at(idx).is_set()
+            self.values[idx].is_set()
                 && all_neighbors(idx).iter().all(|&other_idx| {
                 assume!(other_idx < 81);
 
                 let is_same_idx = idx == other_idx;
-                let is_diff_value = self.value_at(other_idx) != self.value_at(idx);
+                let is_diff_value = self.values[other_idx] != self.values[idx];
                 is_same_idx | is_diff_value
             })
         })
-    }
-
-    pub fn value_at(&self, idx: CellIdx) -> Value {
-        assume!(idx < 81);
-
-        // If the cell is set, return its value.
-        if self.candidates_at(idx).is_set() {
-            self.candidates_at(idx).trailing_zeros() as Value
-        } else {
-            NO_VALUE
-        }
     }
 
     // Get mutable candidates at a cell, assuming a valid index.
@@ -135,7 +130,8 @@ impl Board {
         assume!(idx < 81);
 
         // Basic bookkeeping.
-        self.candidates[idx] = SET_CANDS | (1 << v);
+        self.values[idx] = v;
+        self.candidates[idx] = SET_CANDS;
         self.num_remaining_cells -= 1;
 
         // Erase this value from the cell's neighbors.
@@ -434,7 +430,7 @@ impl fmt::Display for Board {
                 } else {
                     CELL_SEP
                 };
-                let v = self.value_at(r * 9 + c);
+                let v = self.values[r * 9 + c];
                 if v.is_set() {
                     write!(f, "{}", v + 1).unwrap();
                 } else {
