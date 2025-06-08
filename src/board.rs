@@ -10,21 +10,21 @@ struct MutGroupsForCandidate<'a> {
 }
 
 impl<'a> MutGroupsForCandidate<'a> {
-    fn mut_row_candidates(&mut self, r: usize) -> &mut CandidateSet {
+    fn mut_row_candidates(&mut self, r: GroupNum) -> &mut CandidateSet {
         assume!(r < 9);
         assume!(r < self.groups.len());
 
         &mut self.groups[r]
     }
 
-    fn mut_col_candidates(&mut self, c: usize) -> &mut CandidateSet {
+    fn mut_col_candidates(&mut self, c: GroupNum) -> &mut CandidateSet {
         assume!(c < 9);
         assume!(9 + c < self.groups.len());
 
         &mut self.groups[9 + c]
     }
 
-    fn mut_box_candidates(&mut self, b: usize) -> &mut CandidateSet {
+    fn mut_box_candidates(&mut self, b: GroupNum) -> &mut CandidateSet {
         assume!(b < 9);
         assume!(18 + b < self.groups.len());
 

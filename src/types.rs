@@ -1,9 +1,15 @@
 use crate::assume::assume;
 
-// These type aliases help differentiate different kinds of ints.
+/// The index of a cell in the board.
 pub type CellIdx = usize;
+
+/// The number of a group in the board. For "the 5th row", this would be 4.
 pub type GroupNum = usize;
+
+/// The index of a cell in a group. For "the 5th cell in the 3rd row", this would be 4.
 pub type GroupIdx = usize;
+
+/// A group of cells in the board, like a row, column, or box.
 pub type GroupCells = [CellIdx; 9];
 
 // The type of values assigned to cells.
