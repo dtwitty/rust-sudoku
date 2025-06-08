@@ -16,7 +16,7 @@ pub fn single_candidate_position(data: &[CandidateSet]) -> Option<usize> {
             let k = c
                 .iter()
                 // We assume no zero values, so this checks for single-bits.
-                .map(|&e| (e & (e - 1)) == 0)
+                .map(|&e| e.count_ones() == 1)
                 // This associates an index (or chunk length) with each result.
                 .enumerate()
                 .map(|(a, b)| if b { a } else { c.len() } as u8)
@@ -33,7 +33,7 @@ pub fn single_candidate_position(data: &[CandidateSet]) -> Option<usize> {
 /// AS FAST AS POSSIBLE!!!
 pub fn has_any_zeros(arr: &[CandidateSet]) -> bool {
     // Process the data in chunks (to encourage SIMD)...
-    arr.chunks(81)
+    arr.chunks(64)
         // Business logic here. This will compile to a simd min reduction.
         .any(|c| c.iter().map(|&x| x).min().unwrap() == 0)
 }
