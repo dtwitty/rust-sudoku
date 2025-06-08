@@ -214,24 +214,7 @@ impl Board {
                     .mut_row_candidates(r)
                     // At the position's column.
                     .remove_candidate(c as Value);
-            }
-        }
 
-        // In every column...
-        for c in 0..9 {
-            self.candidate_to_groups
-                // This value...
-                .mut_groups_for_candidate(v)
-                .mut_col_candidates(c)
-                // Is no longer available in this row.
-                .remove_candidate(r as Value);
-        }
-
-        // For each position in this box...
-        for bc in 0..3 {
-            for br in 0..3 {
-                let r = (b / 3) * 3 + br;
-                let c = (b % 3) * 3 + bc;
                 self.candidate_to_groups
                     // This value...
                     .mut_groups_for_candidate(v)
@@ -242,22 +225,37 @@ impl Board {
             }
         }
 
-        // The candidate isn't available at position in boxes that
+        // The candidate isn't available at positions in boxes that
         // overlap the current row.
-        for c in 0..9 {
+        let d = (r / 3) * 3;
+        let m = ((r % 3) * 3) as Value;
+        for x in 0..3 {
             self.candidate_to_groups
                 .mut_groups_for_candidate(v)
-                .mut_box_candidates((r / 3) * 3 + (c / 3))
-                .remove_candidate(((r % 3) * 3 + (c % 3)) as Value);
+                .mut_box_candidates(d + x)
+                .remove_candidates(&[m, m + 1, m + 2]);
         }
 
-        // The candidate isn't available at position in boxes that
+
+        // The candidate isn't available at positions in boxes that
         // overlap the current column.
-        for r in 0..9 {
+        let d = c / 3;
+        let m = (c % 3) as Value;
+        for x in 0..3 {
             self.candidate_to_groups
                 .mut_groups_for_candidate(v)
-                .mut_box_candidates((r / 3) * 3 + (c / 3))
-                .remove_candidate(((r % 3) * 3 + (c % 3)) as Value);
+                .mut_box_candidates(x * 3 + d)
+                .remove_candidates(&[m, m + 3, m + 6]);
+        }
+
+        // In every column...
+        for c in 0..9 {
+            self.candidate_to_groups
+                // This value...
+                .mut_groups_for_candidate(v)
+                .mut_col_candidates(c)
+                // Is no longer available in this row.
+                .remove_candidate(r as Value);
         }
     }
 

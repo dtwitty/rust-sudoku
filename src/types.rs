@@ -40,6 +40,7 @@ pub trait CandidateSetMethods {
     fn has_candidate(&self, v: Value) -> bool;
     fn num_candidates(&self) -> u32;
     fn remove_candidate(&mut self, v: Value);
+    fn remove_candidates(&mut self, values: &[Value]);
     fn is_set(&self) -> bool;
 }
 
@@ -54,6 +55,14 @@ impl CandidateSetMethods for CandidateSet {
         assume!(v < 9);
 
         *self &= !(1 << v);
+    }
+    fn remove_candidates(&mut self, values: &[Value]) {
+        let mut mask = 0 as CandidateSet;
+        for &v in values {
+            assume!(v < 9);
+            mask |= 1 << v;
+        }
+        *self &= !mask;
     }
     fn is_set(&self) -> bool {
         *self == SET_CANDS
