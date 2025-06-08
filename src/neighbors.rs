@@ -1,5 +1,5 @@
-use crate::{CellIdx, GroupCells, GroupIdx, GroupNum};
 use crate::assume::assume;
+use crate::{CellIdx, GroupCells, GroupIdx, GroupNum};
 
 // Groups are collections of cells that must contain 1-9.
 // They are implemented such that the same code works for a Row, Col, or Box.
@@ -82,55 +82,37 @@ impl Group for Col {
     }
 }
 
-// Boxes require some tricky math to compute indices.
-// While it is possible to compute these on the fly, these computations don't play well with SIMD.
-// To encourage SIMD, we precompute box positions where possible.
-const STARTS: [CellIdx; 9] = [0, 3, 6, 27, 30, 33, 54, 57, 60];
-const STEPS: [CellIdx; 9] = [0, 1, 2, 9, 10, 11, 18, 19, 20];
-const GROUP_IDXS: [GroupIdx; 81] = [
-    0, 1, 2, 0, 1, 2, 0, 1, 2,
-    3, 4, 5, 3, 4, 5, 3, 4, 5,
-    6, 7, 8, 6, 7, 8, 6, 7, 8,
-    0, 1, 2, 0, 1, 2, 0, 1, 2,
-    3, 4, 5, 3, 4, 5, 3, 4, 5,
-    6, 7, 8, 6, 7, 8, 6, 7, 8,
-    0, 1, 2, 0, 1, 2, 0, 1, 2,
-    3, 4, 5, 3, 4, 5, 3, 4, 5,
-    6, 7, 8, 6, 7, 8, 6, 7, 8
-];
-const BOXES: [GroupNum; 81] = [
-    0, 0, 0, 1, 1, 1, 2, 2, 2,
-    0, 0, 0, 1, 1, 1, 2, 2, 2,
-    0, 0, 0, 1, 1, 1, 2, 2, 2,
-    3, 3, 3, 4, 4, 4, 5, 5, 5,
-    3, 3, 3, 4, 4, 4, 5, 5, 5,
-    3, 3, 3, 4, 4, 4, 5, 5, 5,
-    6, 6, 6, 7, 7, 7, 8, 8, 8,
-    6, 6, 6, 7, 7, 7, 8, 8, 8,
-    6, 6, 6, 7, 7, 7, 8, 8, 8
-];
-
 pub struct Box;
 impl Group for Box {
     fn cell_at(g: GroupNum, idx: GroupIdx) -> CellIdx {
         assume!(g < 9);
         assume!(idx < 9);
 
-        let start = STARTS[g];
-        let step = STEPS[idx];
-        start + step
+        let box_row = g / 3;
+        let box_col = g % 3;
+        let cell_row = idx / 3;
+        let cell_col = idx % 3;
+        (box_row * 27) + (box_col * 3) + (cell_row * 9) + cell_col
     }
 
     fn group_idx(idx: CellIdx) -> GroupIdx {
         assume!(idx < 81);
 
-        GROUP_IDXS[idx]
+        let row = idx / 9;
+        let col = idx % 9;
+        let box_row = row % 3;
+        let box_col = col % 3;
+        box_row * 3 + box_col
     }
 
     fn for_cell(idx: CellIdx) -> GroupNum {
         assume!(idx < 81);
 
-        BOXES[idx]
+        let row = idx / 9;
+        let col = idx % 9;
+        let box_row = row / 3;
+        let box_col = col / 3;
+        box_row * 3 + box_col
     }
 }
 
