@@ -98,7 +98,7 @@ impl Board {
     pub fn is_complete(&self) -> bool {
         (0..81).all(|idx| {
             self.values[idx].is_set()
-                && neighbors(idx).iter().all(|&other_idx| {
+                && unique_neighbors(idx).iter().all(|&other_idx| {
                     assume!(other_idx < 81);
                     self.values[other_idx] != self.values[idx]
                 })
@@ -144,112 +144,36 @@ impl Board {
         assume!(c < 9);
         assume!(b < 9);
 
+        // This cell is taken, so for each value, remove this cell's position
+        // from the row, column, and box group candidate sets.
         for i in 0..9 {
             self.candidate_to_groups
                 .mut_groups_for_candidate(i)
-                // In this row...
                 .mut_row_candidates(r)
-                // At this position.
                 .remove_candidate(Row::group_idx(idx) as Value);
             self.candidate_to_groups
                 .mut_groups_for_candidate(i)
-                // In this column...
                 .mut_col_candidates(c)
-                // At this position.
                 .remove_candidate(Col::group_idx(idx) as Value);
             self.candidate_to_groups
                 .mut_groups_for_candidate(i)
-                // In this box...
                 .mut_box_candidates(b)
-                // At this position.
                 .remove_candidate(Box::group_idx(idx) as Value);
         }
 
-        *self
-            .candidate_to_groups
-            // This value...
-            .mut_groups_for_candidate(v)
-            // Is no longer available in this row.
-            .mut_row_candidates(r) = SET_CANDS;
-
-        *self
-            .candidate_to_groups
-            // This value...
-            .mut_groups_for_candidate(v)
-            // Is no longer available in this column.
-            .mut_col_candidates(c) = SET_CANDS;
-
-        *self
-            .candidate_to_groups
-            // This value...
-            .mut_groups_for_candidate(v)
-            // Is no longer available in this box.
-            .mut_box_candidates(b) = SET_CANDS;
-
-        // In every row...
-        for r in 0..9 {
-            self.candidate_to_groups
-                // This value...
-                .mut_groups_for_candidate(v)
-                .mut_row_candidates(r)
-                // Is no longer available in this column.
-                .remove_candidate(c as Value);
+        // This value can no longer appear in any group that sees this cell.
+        // Apply a precomputed mask that clears the relevant bits from all 27 group entries at once.
+        let mask = value_block_mask(idx);
+        let base = (v as usize) * 27;
+        assume!(base + 27 <= self.candidate_to_groups.candidates.len());
+        for j in 0..27 {
+            self.candidate_to_groups.candidates[base + j] &= mask[j];
         }
 
-        // For each position in this box...
-        for br in 0..3 {
-            for bc in 0..3 {
-                let r = (b / 3) * 3 + br;
-                let c = (b % 3) * 3 + bc;
-                self.candidate_to_groups
-                    // This value...
-                    .mut_groups_for_candidate(v)
-                    // Isn't available in the position's row...
-                    .mut_row_candidates(r)
-                    // At the position's column.
-                    .remove_candidate(c as Value);
-
-                self.candidate_to_groups
-                    // This value...
-                    .mut_groups_for_candidate(v)
-                    // Isn't available in the position's column...
-                    .mut_col_candidates(c)
-                    // At the position's row.
-                    .remove_candidate(r as Value);
-            }
-        }
-
-        // The candidate isn't available at positions in boxes that
-        // overlap the current row.
-        let d = (r / 3) * 3;
-        let m = ((r % 3) * 3) as Value;
-        for x in 0..3 {
-            self.candidate_to_groups
-                .mut_groups_for_candidate(v)
-                .mut_box_candidates(d + x)
-                .remove_candidates(&[m, m + 1, m + 2]);
-        }
-
-        // The candidate isn't available at positions in boxes that
-        // overlap the current column.
-        let d = c / 3;
-        let m = (c % 3) as Value;
-        for x in 0..3 {
-            self.candidate_to_groups
-                .mut_groups_for_candidate(v)
-                .mut_box_candidates(x * 3 + d)
-                .remove_candidates(&[m, m + 3, m + 6]);
-        }
-
-        // In every column...
-        for c in 0..9 {
-            self.candidate_to_groups
-                // This value...
-                .mut_groups_for_candidate(v)
-                .mut_col_candidates(c)
-                // Is no longer available in this row.
-                .remove_candidate(r as Value);
-        }
+        // This value is no longer available anywhere in this row, column, or box.
+        self.candidate_to_groups.candidates[base + r] = SET_CANDS;
+        self.candidate_to_groups.candidates[base + 9 + c] = SET_CANDS;
+        self.candidate_to_groups.candidates[base + 18 + b] = SET_CANDS;
     }
 
     // This function identifies the cell with the most constraints (ie the fewest candidates).
