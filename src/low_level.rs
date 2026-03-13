@@ -1,6 +1,5 @@
 use crate::CandidateSet;
 
-
 /// This function finds the first CandidateSet with a single set bit.
 /// This is the heart of constraint propagation, so it should be
 /// AS FAST AS POSSIBLE!!!
@@ -35,7 +34,7 @@ pub fn has_any_zeros(arr: &[CandidateSet]) -> bool {
     // Process the data in chunks (to encourage SIMD)...
     arr.chunks(64)
         // Business logic here. This will compile to a simd min reduction.
-        .any(|c| c.iter().map(|&x| x).min().unwrap() == 0)
+        .any(|c| c.iter().copied().min().unwrap() == 0)
 }
 
 pub enum ScanResult {

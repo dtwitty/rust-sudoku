@@ -41,7 +41,7 @@ struct CandidateToGroups {
 }
 
 impl CandidateToGroups {
-    fn mut_groups_for_candidate(&mut self, v: Value) -> MutGroupsForCandidate {
+    fn mut_groups_for_candidate(&mut self, v: Value) -> MutGroupsForCandidate<'_> {
         assume!(v < 9);
 
         let start = (v * 9 * 3) as usize;
@@ -59,7 +59,6 @@ pub struct Board {
     num_remaining_cells: usize,
     candidate_to_groups: CandidateToGroups,
 }
-
 
 // These are the possible outcomes of constraint propagation.
 #[derive(PartialEq)]
@@ -95,18 +94,14 @@ impl Board {
         self.num_remaining_cells == 0
     }
 
-
     // Is every cell set, and do its neighbors obey the Sudoku rules?
     pub fn is_complete(&self) -> bool {
         (0..81).all(|idx| {
             self.values[idx].is_set()
-                && all_neighbors(idx).iter().all(|&other_idx| {
-                assume!(other_idx < 81);
-
-                let is_same_idx = idx == other_idx;
-                let is_diff_value = self.values[other_idx] != self.values[idx];
-                is_same_idx | is_diff_value
-            })
+                && neighbors(idx).iter().all(|&other_idx| {
+                    assume!(other_idx < 81);
+                    self.values[other_idx] != self.values[idx]
+                })
         })
     }
 
@@ -134,8 +129,8 @@ impl Board {
         self.candidates[idx] = SET_CANDS;
         self.num_remaining_cells -= 1;
 
-        // Erase this value from the cell's neighbors.
-        all_neighbors(idx).iter().for_each(|&other_idx| {
+        // Erase this value from the cell's unique neighbors.
+        unique_neighbors(idx).iter().for_each(|&other_idx| {
             self.mut_candidates_at(other_idx).remove_candidate(v);
         });
 
@@ -148,7 +143,6 @@ impl Board {
         assume!(r < 9);
         assume!(c < 9);
         assume!(b < 9);
-
 
         for i in 0..9 {
             self.candidate_to_groups
@@ -235,7 +229,6 @@ impl Board {
                 .mut_box_candidates(d + x)
                 .remove_candidates(&[m, m + 1, m + 2]);
         }
-
 
         // The candidate isn't available at positions in boxes that
         // overlap the current column.
@@ -354,25 +347,26 @@ impl Board {
 
             // We found a single candidate at the given position.
             ScanResult::Single(i) => {
-            // We found a hidden single! We just need to extract its position information so that
-            // we can set the value at the right cell.
-            let group_idx = i % 9;
-            let group_type = (i / 9) % 3;
-            let v = i / 9 / 3;
+                // We found a hidden single! We just need to extract its position information so that
+                // we can set the value at the right cell.
+                let group_idx = i % 9;
+                let group_type = (i / 9) % 3;
+                let v = i / 9 / 3;
 
-            let cell_in_group = self.candidate_to_groups.candidates[i].trailing_zeros() as usize;
-            let row_cell = Row::cell_at(group_idx, cell_in_group);
-            let col_cell = Col::cell_at(group_idx, cell_in_group);
-            let box_cell = Box::cell_at(group_idx, cell_in_group);
-            let idx = if group_type == 0 {
-                row_cell
-            } else if group_type == 1 {
-                col_cell
-            } else {
-                box_cell
-            };
+                let cell_in_group =
+                    self.candidate_to_groups.candidates[i].trailing_zeros() as usize;
+                let row_cell = Row::cell_at(group_idx, cell_in_group);
+                let col_cell = Col::cell_at(group_idx, cell_in_group);
+                let box_cell = Box::cell_at(group_idx, cell_in_group);
+                let idx = if group_type == 0 {
+                    row_cell
+                } else if group_type == 1 {
+                    col_cell
+                } else {
+                    box_cell
+                };
 
-            self.set_value_at(idx, v as Value);
+                self.set_value_at(idx, v as Value);
                 ConstraintPropagationResult::PropagatedConstraint
             }
         }
@@ -453,7 +447,7 @@ pub fn parse_board(line: &str) -> Option<Board> {
     let mut board = Board::new();
 
     line.bytes().enumerate().for_each(|(idx, c)| {
-        if c >= b'1' && c <= b'9' {
+        if (b'1'..=b'9').contains(&c) {
             let d = c - b'0';
             board.set_value_at(idx, (d - 1) as Value);
         }

@@ -1,5 +1,5 @@
 use crate::assume::assume;
-use crate::{CellIdx, GroupCells, GroupIdx, GroupNum};
+use crate::{CellIdx, GroupIdx, GroupNum};
 
 // Groups are collections of cells that must contain 1-9.
 // They are implemented such that the same code works for a Row, Col, or Box.
@@ -12,30 +12,6 @@ pub trait Group {
 
     // Which group of this type is the cell in?
     fn for_cell(idx: CellIdx) -> GroupNum;
-
-    // Which cells does the `gth` group of this type contain?
-    fn cells(g: GroupNum) -> GroupCells {
-        assume!(g < 9);
-
-        [
-            Self::cell_at(g, 0),
-            Self::cell_at(g, 1),
-            Self::cell_at(g, 2),
-            Self::cell_at(g, 3),
-            Self::cell_at(g, 4),
-            Self::cell_at(g, 5),
-            Self::cell_at(g, 6),
-            Self::cell_at(g, 7),
-            Self::cell_at(g, 8),
-        ]
-    }
-
-    // What cells see cell `idx` within this group?
-    fn neighbors(idx: CellIdx) -> GroupCells {
-        assume!(idx < 81);
-
-        Self::cells(Self::for_cell(idx))
-    }
 }
 
 pub struct Row;
@@ -116,13 +92,63 @@ impl Group for Box {
     }
 }
 
-// Get a list (with possible repeats!) of all cells that see this cell.
-pub fn all_neighbors(idx: CellIdx) -> [CellIdx; 27] {
+// Get a list of all cells that see this cell.
+pub fn neighbors(idx: CellIdx) -> [CellIdx; 20] {
     assume!(idx < 81);
+    UNIQUE_NEIGHBORS[idx]
+}
 
-    let mut arr: [CellIdx; 27] = [0; 27];
-    arr[..9].clone_from_slice(&Row::neighbors(idx));
-    arr[9..18].clone_from_slice(&Col::neighbors(idx));
-    arr[18..].clone_from_slice(&Box::neighbors(idx));
-    arr
+// Precomputed table of unique neighbors (peers) for each cell, excluding self.
+// Each cell has exactly 20 unique peers: 8 row + 8 col (not in row) + 4 box (not in row or col).
+const UNIQUE_NEIGHBORS: [[CellIdx; 20]; 81] = {
+    let mut table = [[0usize; 20]; 81];
+    let mut idx = 0;
+    while idx < 81 {
+        let r = idx / 9;
+        let c = idx % 9;
+        let br = (r / 3) * 3;
+        let bc = (c / 3) * 3;
+        let mut count = 0;
+        // Row peers (excluding self)
+        let mut j = 0;
+        while j < 9 {
+            let peer = r * 9 + j;
+            if peer != idx {
+                table[idx][count] = peer;
+                count += 1;
+            }
+            j += 1;
+        }
+        // Col peers (excluding self and row duplicates)
+        j = 0;
+        while j < 9 {
+            let peer = j * 9 + c;
+            if peer != idx && j != r {
+                table[idx][count] = peer;
+                count += 1;
+            }
+            j += 1;
+        }
+        // Box peers not already in same row or col
+        let mut bi = 0;
+        while bi < 3 {
+            let mut bj = 0;
+            while bj < 3 {
+                let peer = (br + bi) * 9 + (bc + bj);
+                if peer != idx && (br + bi) != r && (bc + bj) != c {
+                    table[idx][count] = peer;
+                    count += 1;
+                }
+                bj += 1;
+            }
+            bi += 1;
+        }
+        idx += 1;
+    }
+    table
+};
+
+// Get the 20 unique peers for a cell (excludes self, no duplicates).
+pub fn unique_neighbors(idx: CellIdx) -> &'static [CellIdx; 20] {
+    &UNIQUE_NEIGHBORS[idx]
 }
