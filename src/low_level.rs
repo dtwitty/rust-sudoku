@@ -15,7 +15,7 @@ pub fn single_candidate_position(data: &[CandidateSet]) -> Option<usize> {
             let k = c
                 .iter()
                 // We assume no zero values, so this checks for single-bits.
-                .map(|&e| e.count_ones() == 1)
+                .map(|&e| (e & (e - 1)) == 0)
                 // This associates an index (or chunk length) with each result.
                 .enumerate()
                 .map(|(a, b)| if b { a } else { c.len() } as u8)
