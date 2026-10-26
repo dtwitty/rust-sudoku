@@ -34,10 +34,27 @@ impl<'a> MutGroupsForCandidate<'a> {
 
 // Encodes the following information:
 //   for value `i`, in some group (row, col, or box), which cells of that group can hold `i`?
+// Each value's 27 group entries are padded to 32 (2 AVX2 ymm vectors = 64 bytes) for SIMD alignment.
+const GROUP_STRIDE: usize = 32;
+const NUM_GROUP_CANDS: usize = 9 * GROUP_STRIDE;
+const INIT_GROUP_CANDS: [CandidateSet; NUM_GROUP_CANDS] = {
+    let mut arr = [SET_CANDS; NUM_GROUP_CANDS];
+    let mut v = 0;
+    while v < 9 {
+        let mut g = 0;
+        while g < 27 {
+            arr[v * GROUP_STRIDE + g] = ALL_CANDS;
+            g += 1;
+        }
+        v += 1;
+    }
+    arr
+};
+
 #[derive(Debug, Copy, Clone)]
 #[repr(C, align(64))]
 struct CandidateToGroups {
-    candidates: [CandidateSet; 9 * 3 * 9],
+    candidates: [CandidateSet; NUM_GROUP_CANDS],
 }
 
 impl CandidateToGroups {
@@ -84,7 +101,7 @@ impl Board {
             // Where is each value available in each group?
             // For example, we can ask 'In Row 2, which cells can take a 5?'
             candidate_to_groups: CandidateToGroups {
-                candidates: [ALL_CANDS; 9 * 3 * 9],
+                candidates: INIT_GROUP_CANDS,
             },
         }
     }
@@ -121,59 +138,45 @@ impl Board {
 
     // Set a value at a cell.
     // This function handles updating the constraint propagation data structures.
+    #[inline(always)]
     fn set_value_at(&mut self, idx: CellIdx, v: Value) {
         assume!(idx < 81);
+        assume!(v < 9);
 
         // Basic bookkeeping.
         self.values[idx] = v;
-        self.candidates[idx] = SET_CANDS;
         self.num_remaining_cells -= 1;
 
         // Erase this value from the cell's unique neighbors.
-        unique_neighbors(idx).iter().for_each(|&other_idx| {
-            self.mut_candidates_at(other_idx).remove_candidate(v);
-        });
-
-        // Get the row, col, and box for this cell.
-        let r = Row::for_cell(idx);
-        let c = Col::for_cell(idx);
-        let b = Box::for_cell(idx);
-
-        assume!(v < 9);
-        assume!(r < 9);
-        assume!(c < 9);
-        assume!(b < 9);
+        let v_bit = 1u16 << v;
+        let nmask = neighbor_mask(idx);
+        for j in 0..81 {
+            self.candidates[j] &= !(nmask[j] & v_bit);
+        }
+        self.candidates[idx] = SET_CANDS;
 
         // This cell is taken, so for each value, remove this cell's position
         // from the row, column, and box group candidate sets.
+        let cg_mask = cell_group_mask(idx);
         for i in 0..9 {
-            self.candidate_to_groups
-                .mut_groups_for_candidate(i)
-                .mut_row_candidates(r)
-                .remove_candidate(Row::group_idx(idx) as Value);
-            self.candidate_to_groups
-                .mut_groups_for_candidate(i)
-                .mut_col_candidates(c)
-                .remove_candidate(Col::group_idx(idx) as Value);
-            self.candidate_to_groups
-                .mut_groups_for_candidate(i)
-                .mut_box_candidates(b)
-                .remove_candidate(Box::group_idx(idx) as Value);
+            let g_base = i * GROUP_STRIDE;
+            for j in 0..GROUP_STRIDE {
+                self.candidate_to_groups.candidates[g_base + j] &= cg_mask[j];
+            }
         }
 
-        // This value can no longer appear in any group that sees this cell.
-        // Apply a precomputed mask that clears the relevant bits from all 27 group entries at once.
+        // This value can no longer appear in any group that sees this cell,
+        // and is now SET_CANDS in this cell's own row, column, and box.
         let mask = value_block_mask(idx);
-        let base = (v as usize) * 27;
-        assume!(base + 27 <= self.candidate_to_groups.candidates.len());
-        for j in 0..27 {
+        let smask = cell_group_set_mask(idx);
+        let base = (v as usize) * GROUP_STRIDE;
+        assume!(base + GROUP_STRIDE <= self.candidate_to_groups.candidates.len());
+        for j in 0..GROUP_STRIDE {
             self.candidate_to_groups.candidates[base + j] &= mask[j];
         }
-
-        // This value is no longer available anywhere in this row, column, or box.
-        self.candidate_to_groups.candidates[base + r] = SET_CANDS;
-        self.candidate_to_groups.candidates[base + 9 + c] = SET_CANDS;
-        self.candidate_to_groups.candidates[base + 18 + b] = SET_CANDS;
+        for j in 0..GROUP_STRIDE {
+            self.candidate_to_groups.candidates[base + j] |= smask[j];
+        }
     }
 
     // This function identifies the cell with the most constraints (ie the fewest candidates).
@@ -273,9 +276,13 @@ impl Board {
             ScanResult::Single(i) => {
                 // We found a hidden single! We just need to extract its position information so that
                 // we can set the value at the right cell.
-                let group_idx = i % 9;
-                let group_type = (i / 9) % 3;
-                let v = i / 9 / 3;
+                let g = i % GROUP_STRIDE;
+                if g >= 27 {
+                    return NoConstraintsPropagated;
+                }
+                let group_idx = g % 9;
+                let group_type = g / 9;
+                let v = (i / GROUP_STRIDE) as Value;
 
                 let cell_in_group =
                     self.candidate_to_groups.candidates[i].trailing_zeros() as usize;

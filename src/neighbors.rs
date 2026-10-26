@@ -149,27 +149,82 @@ pub fn unique_neighbors(idx: CellIdx) -> &'static [CellIdx; 20] {
     &UNIQUE_NEIGHBORS[idx]
 }
 
-// For a given cell, what bits should be cleared from value v's 27-entry candidate_to_groups block?
-// The 27 entries are: 9 row groups, 9 col groups, 9 box groups.
-// This mask encodes:
-//   - This value can't appear in this cell's column (cleared from every row group).
-//   - This value can't appear in this cell's row (cleared from every col group).
-//   - This value can't appear in any box position that shares a row or column with this cell.
-// After applying the mask, the cell's own row/col/box entries should be overwritten with SET_CANDS.
-pub fn value_block_mask(idx: CellIdx) -> &'static [u16; 27] {
+const NEIGHBOR_MASK: [[u16; 81]; 81] = {
+    let mut table = [[0u16; 81]; 81];
+    let mut idx = 0;
+    while idx < 81 {
+        let peers = &UNIQUE_NEIGHBORS[idx];
+        let mut k = 0;
+        while k < 20 {
+            table[idx][peers[k]] = 0xFFFF;
+            k += 1;
+        }
+        idx += 1;
+    }
+    table
+};
+
+pub fn neighbor_mask(idx: CellIdx) -> &'static [u16; 81] {
+    assume!(idx < 81);
+    &NEIGHBOR_MASK[idx]
+}
+
+const CELL_GROUP_MASK: [[u16; 32]; 81] = {
+    let mut table = [[0xFFFFu16; 32]; 81];
+    let mut idx = 0;
+    while idx < 81 {
+        let r = idx / 9;
+        let c = idx % 9;
+        let b = (r / 3) * 3 + (c / 3);
+        let box_idx = (r % 3) * 3 + (c % 3);
+        table[idx][r] = !(1u16 << c);
+        table[idx][9 + c] = !(1u16 << r);
+        table[idx][18 + b] = !(1u16 << box_idx);
+        idx += 1;
+    }
+    table
+};
+
+pub fn cell_group_mask(idx: CellIdx) -> &'static [u16; 32] {
+    assume!(idx < 81);
+    &CELL_GROUP_MASK[idx]
+}
+
+const CELL_GROUP_SET_MASK: [[u16; 32]; 81] = {
+    let mut table = [[0u16; 32]; 81];
+    let mut idx = 0;
+    while idx < 81 {
+        let r = idx / 9;
+        let c = idx % 9;
+        let b = (r / 3) * 3 + (c / 3);
+        table[idx][r] = crate::types::SET_CANDS;
+        table[idx][9 + c] = crate::types::SET_CANDS;
+        table[idx][18 + b] = crate::types::SET_CANDS;
+        idx += 1;
+    }
+    table
+};
+
+pub fn cell_group_set_mask(idx: CellIdx) -> &'static [u16; 32] {
+    assume!(idx < 81);
+    &CELL_GROUP_SET_MASK[idx]
+}
+
+pub fn value_block_mask(idx: CellIdx) -> &'static [u16; 32] {
     assume!(idx < 81);
 
     &VALUE_BLOCK_MASK[idx]
 }
 
-const VALUE_BLOCK_MASK: [[u16; 27]; 81] = {
-    let mut table = [[0xFFFFu16; 27]; 81];
+const VALUE_BLOCK_MASK: [[u16; 32]; 81] = {
+    let mut table = [[0xFFFFu16; 32]; 81];
     let mut idx = 0usize;
     while idx < 81 {
         let r = idx / 9;
         let c = idx % 9;
         let br = r / 3;
         let bc = c / 3;
+        let b = br * 3 + bc;
 
         // Row group entries (positions 0..8).
         // For each row: this value can no longer go in this cell's column.
@@ -218,6 +273,10 @@ const VALUE_BLOCK_MASK: [[u16; 27]; 81] = {
             }
             bx += 1;
         }
+
+        table[idx][r] = 0;
+        table[idx][9 + c] = 0;
+        table[idx][18 + b] = 0;
 
         idx += 1;
     }
