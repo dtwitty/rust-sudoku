@@ -32,15 +32,11 @@ pub const ALL_CANDS: CandidateSet = 511;
 pub const SET_CANDS: CandidateSet = 0x600;
 
 pub trait CandidateSetMethods {
-    fn has_candidate(&self, v: Value) -> bool;
     fn num_candidates(&self) -> u32;
     fn is_set(&self) -> bool;
 }
 
 impl CandidateSetMethods for CandidateSet {
-    fn has_candidate(&self, v: Value) -> bool {
-        (*self & (1 << v)) != 0
-    }
     fn num_candidates(&self) -> u32 {
         self.count_ones()
     }

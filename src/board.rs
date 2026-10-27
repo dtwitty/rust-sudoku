@@ -301,18 +301,27 @@ pub fn solve(board: &mut Board) -> Option<Board> {
             // Pick the most constrained cell.
             let idx = board.most_constrained_cell();
 
-            // Check every possible candidate for that cell.
-            for v in 0..9 {
-                if board.candidates_at(idx).has_candidate(v) {
-                    // Copy the current board, and set the value in the new board.
-                    let mut new_board: Board = *board;
-                    new_board.set_value_at(idx, v);
+            // Iterate over all candidate values for that cell.
+            let mut cands = board.candidates_at(idx) & 0x1FF;
+            while cands != 0 {
+                let v = cands.trailing_zeros() as Value;
+                cands &= cands - 1;
 
-                    // Check whether the new board is now solveable.
-                    let solution = solve(&mut new_board);
-                    if solution.is_some() {
-                        return solution;
-                    }
+                if cands == 0 {
+                    // On the final candidate branch, backtracking to this frame is impossible.
+                    // Mutate `board` directly in place to eliminate a 768-byte copy and stack frame.
+                    board.set_value_at(idx, v);
+                    return solve(board);
+                }
+
+                // Copy the current board, and set the value in the new board.
+                let mut new_board: Board = *board;
+                new_board.set_value_at(idx, v);
+
+                // Check whether the new board is now solveable.
+                let solution = solve(&mut new_board);
+                if solution.is_some() {
+                    return solution;
                 }
             }
 
