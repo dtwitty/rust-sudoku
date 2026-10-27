@@ -149,6 +149,14 @@ pub fn unique_neighbors(idx: CellIdx) -> &'static [CellIdx; 20] {
     &UNIQUE_NEIGHBORS[idx]
 }
 
+// Precomputed 81-element bitmask for each cell where all 20 unique peers are 0xFFFF and others are 0x0000.
+//
+// Motivation:
+// In `set_value_at`, clearing candidate `v` from 20 peers via scalar indexing performs 20 random writes
+// to `Board::candidates`. When `scan()` immediately loads `candidates` sequentially, the CPU's store queue
+// must disambiguate each load against preceding stores, causing store-to-load forwarding stalls.
+// Applying `NEIGHBOR_MASK` transforms this into a single contiguous 81-element SIMD pass:
+// `candidates[j] &= !(neighbor_mask[j] & (1 << v))`.
 const NEIGHBOR_MASK: [[u16; 81]; 81] = {
     let mut table = [[0u16; 81]; 81];
     let mut idx = 0;
@@ -169,6 +177,15 @@ pub fn neighbor_mask(idx: CellIdx) -> &'static [u16; 81] {
     &NEIGHBOR_MASK[idx]
 }
 
+// Precomputed 32-element mask for each cell clearing the cell's position across its row, col, and box groups:
+//   - row group r: clear bit c (column position within row)
+//   - col group 9 + c: clear bit r (row position within column)
+//   - box group 18 + b: clear bit box_idx (cell position within box)
+//
+// Motivation:
+// When cell `idx` is filled, no other candidate can occupy that cell. Precomputing this 32-element mask
+// allows updating each candidate's group bitmasks via a 2-vector SIMD bitwise-AND instead of 27 scalar
+// read-modify-write operations.
 const CELL_GROUP_MASK: [[u16; 32]; 81] = {
     let mut table = [[0xFFFFu16; 32]; 81];
     let mut idx = 0;
@@ -190,6 +207,10 @@ pub fn cell_group_mask(idx: CellIdx) -> &'static [u16; 32] {
     &CELL_GROUP_MASK[idx]
 }
 
+// Precomputed 32-element mask for each cell with SET_CANDS at the cell's row (r), col (9 + c), and box (18 + b),
+// and 0x0000 elsewhere.
+// Combined with VALUE_BLOCK_MASK (which zeroes those 3 positions), this allows setting SET_CANDS
+// in the placed value's groups via a SIMD bitwise-OR without scalar indexing.
 const CELL_GROUP_SET_MASK: [[u16; 32]; 81] = {
     let mut table = [[0u16; 32]; 81];
     let mut idx = 0;
@@ -216,6 +237,15 @@ pub fn value_block_mask(idx: CellIdx) -> &'static [u16; 32] {
     &VALUE_BLOCK_MASK[idx]
 }
 
+// Precomputed 32-element mask for each cell clearing all group positions that see this cell.
+//
+// Motivation:
+// For value `v` placed at cell `idx`, this mask clears all positions in peer groups that can no longer
+// hold `v`:
+//   - clears column `c` from all row groups (and entire box col-band for rows sharing this box)
+//   - clears row `r` from all col groups (and entire box row-band for cols sharing this box)
+//   - clears shared row/col positions from all box groups in the same row/col band
+//   - zeroes out the cell's own row (r), col (9 + c), and box (18 + b) entries so CELL_GROUP_SET_MASK can OR SET_CANDS.
 const VALUE_BLOCK_MASK: [[u16; 32]; 81] = {
     let mut table = [[0xFFFFu16; 32]; 81];
     let mut idx = 0usize;

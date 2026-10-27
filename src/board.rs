@@ -34,7 +34,16 @@ impl<'a> MutGroupsForCandidate<'a> {
 
 // Encodes the following information:
 //   for value `i`, in some group (row, col, or box), which cells of that group can hold `i`?
-// Each value's 27 group entries are padded to 32 (2 AVX2 ymm vectors = 64 bytes) for SIMD alignment.
+//
+// Layout optimization:
+// Each value has 27 active group entries (9 rows, 9 cols, 9 boxes). Padded to GROUP_STRIDE = 32
+// (64 bytes = 1 cache line, exactly 2 AVX2 ymm vectors or 4 NEON q vectors) so each value block
+// is 64-byte aligned for contiguous SIMD operations.
+//
+// Invariant - Sentinel Padding:
+// Unused padding slots (indices 27..32 within each block) are initialized to SET_CANDS (0x600).
+// Because SET_CANDS has 2 bits set, it is never zero (won't trigger conflict) and never has popcount 1
+// (won't trigger hidden single), allowing full-block vector operations without special tail masking.
 const GROUP_STRIDE: usize = 32;
 const NUM_GROUP_CANDS: usize = 9 * GROUP_STRIDE;
 const INIT_GROUP_CANDS: [CandidateSet; NUM_GROUP_CANDS] = {
@@ -137,7 +146,20 @@ impl Board {
     }
 
     // Set a value at a cell.
-    // This function handles updating the constraint propagation data structures.
+    //
+    // Guarantees:
+    // - Preconditions: `idx < 81`, `v < 9`, and `v` is a valid candidate for `idx`.
+    // - Postconditions:
+    //   - `self.values[idx]` is set to `v`, and `self.candidates[idx]` is set to `SET_CANDS`.
+    //   - `v` is removed from candidate sets of all 20 unique peers.
+    //   - `idx` is removed from `candidate_to_groups` for all values `0..9`.
+    //   - Value `v` is removed from all row/col/box groups that see `idx`, and marked `SET_CANDS` in `idx`'s groups.
+    //
+    // Implementation trade-off:
+    // All updates are structured as full-width SIMD bitwise passes across contiguous arrays.
+    // This eliminates 20 random indexed writes to `self.candidates` (which cause store-to-load
+    // forwarding stalls in subsequent `scan()` passes) and replaces 27 scalar group updates with
+    // 64-byte aligned SIMD AND/OR operations.
     #[inline(always)]
     fn set_value_at(&mut self, idx: CellIdx, v: Value) {
         assume!(idx < 81);
@@ -148,6 +170,7 @@ impl Board {
         self.num_remaining_cells -= 1;
 
         // Erase this value from the cell's unique neighbors.
+        // Contiguous 81-element SIMD pass eliminates 20 random indexed writes that stall subsequent loads in scan().
         let v_bit = 1u16 << v;
         let nmask = neighbor_mask(idx);
         for j in 0..81 {
@@ -157,6 +180,7 @@ impl Board {
 
         // This cell is taken, so for each value, remove this cell's position
         // from the row, column, and box group candidate sets.
+        // Each value's 32-element block is updated with a 2-vector SIMD bitwise-AND.
         let cg_mask = cell_group_mask(idx);
         for i in 0..9 {
             let g_base = i * GROUP_STRIDE;
@@ -165,8 +189,8 @@ impl Board {
             }
         }
 
-        // This value can no longer appear in any group that sees this cell,
-        // and is now SET_CANDS in this cell's own row, column, and box.
+        // Value `v` can no longer appear anywhere that sees this cell. Apply VALUE_BLOCK_MASK (which also
+        // zeroes out the cell's own row, col, and box), then OR CELL_GROUP_SET_MASK to set SET_CANDS.
         let mask = value_block_mask(idx);
         let smask = cell_group_set_mask(idx);
         let base = (v as usize) * GROUP_STRIDE;
@@ -276,6 +300,9 @@ impl Board {
             ScanResult::Single(i) => {
                 // We found a hidden single! We just need to extract its position information so that
                 // we can set the value at the right cell.
+                //
+                // Flat index `i` is decoded into group `g` within value and candidate value `v`.
+                // With GROUP_STRIDE = 32, this is a bitwise AND and shift. Padding slots (g >= 27) are ignored.
                 let g = i % GROUP_STRIDE;
                 if g >= 27 {
                     return NoConstraintsPropagated;
