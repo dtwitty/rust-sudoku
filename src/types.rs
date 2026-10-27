@@ -1,5 +1,3 @@
-use crate::assume::assume;
-
 /// The index of a cell in the board.
 pub type CellIdx = usize;
 
@@ -36,7 +34,6 @@ pub const SET_CANDS: CandidateSet = 0x600;
 pub trait CandidateSetMethods {
     fn has_candidate(&self, v: Value) -> bool;
     fn num_candidates(&self) -> u32;
-    fn remove_candidate(&mut self, v: Value);
     fn is_set(&self) -> bool;
 }
 
@@ -46,11 +43,6 @@ impl CandidateSetMethods for CandidateSet {
     }
     fn num_candidates(&self) -> u32 {
         self.count_ones()
-    }
-    fn remove_candidate(&mut self, v: Value) {
-        assume!(v < 9);
-
-        *self &= !(1 << v);
     }
     fn is_set(&self) -> bool {
         *self == SET_CANDS
