@@ -5,33 +5,6 @@ use crate::neighbors::*;
 use crate::types::*;
 use std::fmt;
 
-struct MutGroupsForCandidate<'a> {
-    groups: &'a mut [CandidateSet],
-}
-
-impl<'a> MutGroupsForCandidate<'a> {
-    fn mut_row_candidates(&mut self, r: GroupNum) -> &mut CandidateSet {
-        assume!(r < 9);
-        assume!(r < self.groups.len());
-
-        &mut self.groups[r]
-    }
-
-    fn mut_col_candidates(&mut self, c: GroupNum) -> &mut CandidateSet {
-        assume!(c < 9);
-        assume!(9 + c < self.groups.len());
-
-        &mut self.groups[9 + c]
-    }
-
-    fn mut_box_candidates(&mut self, b: GroupNum) -> &mut CandidateSet {
-        assume!(b < 9);
-        assume!(18 + b < self.groups.len());
-
-        &mut self.groups[18 + b]
-    }
-}
-
 // Encodes the following information:
 //   for value `i`, in some group (row, col, or box), which cells of that group can hold `i`?
 //
@@ -51,7 +24,7 @@ const INIT_GROUP_CANDS: [CandidateSet; NUM_GROUP_CANDS] = {
     let mut v = 0;
     while v < 9 {
         let mut g = 0;
-        while g < 27 {
+        while g < NUM_GROUPS {
             arr[v * GROUP_STRIDE + g] = ALL_CANDS;
             g += 1;
         }
@@ -64,17 +37,6 @@ const INIT_GROUP_CANDS: [CandidateSet; NUM_GROUP_CANDS] = {
 #[repr(C, align(64))]
 struct CandidateToGroups {
     candidates: [CandidateSet; NUM_GROUP_CANDS],
-}
-
-impl CandidateToGroups {
-    fn mut_groups_for_candidate(&mut self, v: Value) -> MutGroupsForCandidate<'_> {
-        assume!(v < 9);
-
-        let start = (v * 9 * 3) as usize;
-        MutGroupsForCandidate {
-            groups: &mut self.candidates[start..],
-        }
-    }
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -129,13 +91,6 @@ impl Board {
                     self.values[other_idx] != self.values[idx]
                 })
         })
-    }
-
-    // Get mutable candidates at a cell, assuming a valid index.
-    fn mut_candidates_at(&mut self, idx: CellIdx) -> &mut CandidateSet {
-        assume!(idx < 81);
-
-        &mut self.candidates[idx]
     }
 
     // Get candidates at a cell, assuming a valid index.
@@ -302,9 +257,9 @@ impl Board {
                 // we can set the value at the right cell.
                 //
                 // Flat index `i` is decoded into group `g` within value and candidate value `v`.
-                // With GROUP_STRIDE = 32, this is a bitwise AND and shift. Padding slots (g >= 27) are ignored.
+                // With GROUP_STRIDE = 32, this is a bitwise AND and shift. Padding slots (g >= NUM_GROUPS) are ignored.
                 let g = i % GROUP_STRIDE;
-                if g >= 27 {
+                if g >= NUM_GROUPS {
                     return NoConstraintsPropagated;
                 }
                 let group_idx = g % 9;
@@ -313,14 +268,15 @@ impl Board {
 
                 let cell_in_group =
                     self.candidate_to_groups.candidates[i].trailing_zeros() as usize;
-                let row_cell = Row::cell_at(group_idx, cell_in_group);
-                let col_cell = Col::cell_at(group_idx, cell_in_group);
-                let box_cell = Box::cell_at(group_idx, cell_in_group);
-                let idx = if group_type == 0 {
+                let row_cell = <Row as Group>::cell_at(group_idx, cell_in_group);
+                let col_cell = <Col as Group>::cell_at(group_idx, cell_in_group);
+                let box_cell = <Box as Group>::cell_at(group_idx, cell_in_group);
+                let idx = if group_type == <Row as Group>::TYPE_INDEX {
                     row_cell
-                } else if group_type == 1 {
+                } else if group_type == <Col as Group>::TYPE_INDEX {
                     col_cell
                 } else {
+                    debug_assert_eq!(group_type, <Box as Group>::TYPE_INDEX);
                     box_cell
                 };
 
